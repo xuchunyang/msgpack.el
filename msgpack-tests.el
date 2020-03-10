@@ -26,6 +26,126 @@
 (require 'ert)
 (require 'msgpack)
 
+(ert-deftest msgpack-read ()
+  ;; nil, false, true
+  (should-not (msgpack-read-from-string (unibyte-string #xc0)))
+  (should-not (msgpack-read-from-string (unibyte-string #xc2)))
+  (should (msgpack-read-from-string (unibyte-string #xc3)))
+  ;; [0, 127]
+  (should (zerop (msgpack-read-from-string (unibyte-string 0))))
+  (should (= 127 (msgpack-read-from-string (unibyte-string 127))))
+  ;; [-32, -1]
+  (should (= -32 (msgpack-read-from-string (unibyte-string #b11100000))))
+  (should (= -1 (msgpack-read-from-string (unibyte-string #xff))))
+  ;; [0, 2^8-1]
+  (should (= 0 (msgpack-read-from-string (unibyte-string #xcc 0))))
+  (should (= 255 (msgpack-read-from-string (unibyte-string #xcc #xff))))
+  ;; [0, 2^16-1]
+  (should (= 0 (msgpack-read-from-string (unibyte-string #xcd 0 0))))
+  (should (= (1- (expt 2 16)) (msgpack-read-from-string (unibyte-string #xcd #xff #xff))))
+  ;; [0, 2^32-1]
+  (should (= (1- (expt 2 32)) (msgpack-read-from-string (unibyte-string #xce #xff #xff #xff #xff))))
+  ;; [0, 2^64-1]
+  (when (> (expt 2 64) 0)               ; need Emacs 27.1's bignum
+    (should (= (1- (expt 2 64))
+               (msgpack-read-from-string (unibyte-string #xcf #xff #xff #xff #xff #xff #xff #xff #xff)))))
+  ;; [-128, 127]
+  ;; NOTE https://msgpack.org/index.html's Try! has a bug, it encodes -128 as 3 bytes d1 ff 80
+  (should (= -128 (msgpack-read-from-string (unibyte-string #xd0 #x80))))
+  ;; [-2^15, 2^15-1]
+  (should (= (- (expt 2 15)) (msgpack-read-from-string (unibyte-string #xd1 #x80 #x00))))
+  ;; [-2^31, 2^31-1]
+  (should (= (- (expt 2 31)) (msgpack-read-from-string (unibyte-string #xd2 #x80 #x00 #x00 #x00))))
+  ;; [-2^63, 2^63-1]
+  (when (> (expt 2 63) 0)               ; need Emacs 27.1's bignum
+    (should (= (- (expt 2 63))
+               (msgpack-read-from-string (unibyte-string #xd3 #x80 #x00 #x00 #x00 #x00 #x00 #x00 #x00)))))
+  ;; float
+  (should (= 0.15625 (msgpack-read-from-string (unibyte-string #xca #x3e #x20 #x00 #x00))))
+  ;; double
+  (should (= 0.15625 (msgpack-read-from-string (unibyte-string #xcb #x3f #xc4 #x00 #x00 #x00 #x00 #x00 #x00))))
+  ;; string within [0, 31] bytes
+  (should (equal "" (msgpack-read-from-string (unibyte-string #b10100000))))
+  (should (equal "hello" (msgpack-read-from-string (unibyte-string #b10100101 ?h ?e ?l ?l ?o))))
+  ;; string within [0, 255] bytes
+  (should (equal (make-string 255 ?x) (msgpack-read-from-string (concat (unibyte-string #xd9 #xff) (make-string 255 ?x)))))
+  ;; string within [0, 2^16-1] bytes
+  (should (equal "" (msgpack-read-from-string (unibyte-string #xda 0 0))))
+  ;; string within [0, 2^32-1] bytes
+  (should (equal "" (msgpack-read-from-string (unibyte-string #xdb 0 0 0 0))))
+  ;; bin within [0, 255] bytes
+  ((equal (unibyte-string 1 2 3) (msgpack-read-from-string (unibyte-string #xc4 3 1 2 3))))
+  ;; bin within [0, 2^16-1] bytes
+  (should (equal "" (msgpack-read-from-string (unibyte-string #xc5 0 0))))
+  ;; bin within [0, 2^32-1] bytes
+  (should (equal "" (msgpack-read-from-string (unibyte-string #xc6 0 0 0 0))))
+  ;; array within [0, 15] elements
+  (should (equal () (msgpack-read-from-string (unibyte-string #b10010000))))
+  (should (equal '(1 2 3) (msgpack-read-from-string (unibyte-string #b10010011 1 2 3))))
+  ;; array within [0, 2^16-1] elements
+  (should (equal () (msgpack-read-from-string (unibyte-string #xdc 0 0))))
+  (should (equal '(1 2 3 4) (msgpack-read-from-string (unibyte-string #xdc 0 4 1 2 3 4))))
+  ;; array within [0, 2^32-1] elements
+  (should (equal () (msgpack-read-from-string (unibyte-string #xdd 0 0 0 0))))
+  ;; map within [0, 15] pairs
+  (should (equal () (msgpack-read-from-string (unibyte-string #b10000000))))
+  (should (equal '((1 . 2) (3 . 4)) (msgpack-read-from-string (unibyte-string #b10000010 1 2 3 4))))
+  (should (equal'(("compact" . t) ("schema" . 0))
+                (msgpack-read-from-string (unibyte-string #x82 #xa7 ?c ?o ?m ?p ?a ?c ?t #xc3 #xa6 ?s ?c ?h ?e ?m ?a 0))))
+  ;; map within [0, 2^16-1] pairs
+  (should (equal () (msgpack-read-from-string (unibyte-string #xde 0 0))))
+  (should (equal '((1 . 2) (3 . 4)) (msgpack-read-from-string (unibyte-string #xde 0 2 1 2 3 4))))
+  ;; map within [0, 2^32-1] pairs
+  (should (equal () (msgpack-read-from-string (unibyte-string #xdf 0 0 0 0))))
+  (should (equal '((1 . 2) (3 . 4)) (msgpack-read-from-string (unibyte-string #xdf 0 0 0 2 1 2 3 4))))
+  ;; ext, data len = 1 bytes
+  (should (pcase (msgpack-read-from-string (unibyte-string #xd4 1 2))
+            ((cl-struct msgpack-ext
+                        (type (pred (= 1)))
+                        (data (pred (equal (unibyte-string 2)))))
+             t)))
+  ;; ext, data len = 2  bytes
+  (should (pcase (msgpack-read-from-string (unibyte-string #xd5 1 1 2))
+            ((cl-struct msgpack-ext
+                        (type (pred (= 1)))
+                        (data (pred (equal (unibyte-string 1 2)))))
+             t)))
+  ;; ext, data len = 4 bytes
+  (should (pcase (msgpack-read-from-string (unibyte-string #xd6 1 1 2 3 4))
+            ((cl-struct msgpack-ext
+                        (type (pred (= 1)))
+                        (data (pred (equal (unibyte-string 1 2 3 4)))))
+             t)))
+  ;; ext, data len = 8 bytes
+  (should (pcase (msgpack-read-from-string (unibyte-string #xd7 1 1 2 3 4 5 6 7 8))
+            ((cl-struct msgpack-ext
+                        (type (pred (= 1)))
+                        (data (pred (equal (unibyte-string 1 2 3 4 5 6 7 8)))))
+             t)))
+  ;; ext, data len = 16 bytes
+  (should (pcase (msgpack-read-from-string (unibyte-string #xd8 1 1 2 3 4 5 6 7 8 1 2 3 4 5 6 7 8))
+            ((cl-struct msgpack-ext
+                        (type (pred (= 1)))
+                        (data (pred (equal (unibyte-string 1 2 3 4 5 6 7 8 1 2 3 4 5 6 7 8)))))
+             t)))
+  ;; ext, data len within [0, 255] bytes
+  (should (pcase (msgpack-read-from-string (unibyte-string #xc7 0 1))
+            ((cl-struct msgpack-ext
+                        (type (pred (= 1)))
+                        (data (pred (equal ""))))
+             t)))
+  ;; ext, data len within [0, 2^16-1] bytes
+  (should (pcase (msgpack-read-from-string (unibyte-string #xc8 0 0 1))
+            ((cl-struct msgpack-ext
+                        (type (pred (= 1)))
+                        (data (pred (equal ""))))
+             t)))
+  ;; ext, data len within [0, 2^32-1] bytes
+  (should (pcase (msgpack-read-from-string (unibyte-string #xc9 0 0 0 0 1))
+            ((cl-struct msgpack-ext
+                        (type (pred (= 1)))
+                        (data (pred (equal ""))))
+             t))))
 
 (provide 'msgpack-tests)
 ;;; msgpack-tests.el ends here
