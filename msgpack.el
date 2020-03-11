@@ -4,7 +4,7 @@
 
 ;; Author: Xu Chunyang
 ;; Homepage: https://github.com/xuchunyang/msgpack.el
-;; Package-Requires: ((emacs "24.5"))
+;; Package-Requires: ((emacs "25.1"))
 ;; Keywords: lisp
 ;; Version: 0
 
@@ -137,7 +137,7 @@ Advances point just past MessagePack object."
       ;; ext
       (#xd4 (msgpack-ext-make (msgpack-read-byte) (msgpack-read-bytes 1)))
       (#xd5 (msgpack-ext-make (msgpack-read-byte) (msgpack-read-bytes 2)))
-      ;; xxx timestamps
+      ;; XXX timestamps
       (#xd6 (msgpack-ext-make (msgpack-read-byte) (msgpack-read-bytes 4)))
       (#xd7 (msgpack-ext-make (msgpack-read-byte) (msgpack-read-bytes 8)))
       (#xd8 (msgpack-ext-make (msgpack-read-byte) (msgpack-read-bytes 16)))
@@ -164,6 +164,215 @@ Advances point just past MessagePack object."
     (insert string)
     (goto-char (point-min))
     (msgpack-read)))
+
+(defun msgpack-unsigned-to-bytes (integer size)
+  "Convert unsigned INTEGER to SIZE bytes."
+  (apply
+   #'unibyte-string
+   (nreverse
+    (cl-loop repeat size
+             for i from 0 by 8
+             collect (logand #xff (lsh integer (- i)))))))
+
+(defun msgpack-signed-to-bytes (integer size)
+  "Convert signed INTEGER to SIZE bytes."
+  (if (>= integer 0)
+      (msgpack-unsigned-to-bytes integer size)
+    (msgpack-unsigned-to-bytes (lognot (1- (- integer))) size)))
+
+(defun msgpack-encode-integer (n)
+  "Return a MessagePack representation of integer N."
+  (pcase n
+    ((guard (<= 0 n 127))
+     (unibyte-string n))
+    ((guard (<= -32 n -1))
+     (unibyte-string (logior #b11100000 (+ 32 n))))
+    ((guard (<= 0 n 255))
+     (unibyte-string #xcc n))
+    ((guard (<= 0 n #xffff))
+     (concat (unibyte-string #xcd) (msgpack-unsigned-to-bytes n 2)))
+    ;; NOTE #xffffffff or 2^32 overflow for 32-bit platform
+    ((guard (<= 0 n #xffffffff))
+     (concat (unibyte-string #xce) (msgpack-unsigned-to-bytes n 4)))
+    ((or (guard (and (> (expt 2 64) 0)  ; need Emacs 27.1's bignum
+                     (<= 0 n (1- (expt 2 64)))))
+         (guard (<= 0 n (max (1- (expt 2 64)) most-positive-fixnum))))
+     (concat (unibyte-string #xcf) (msgpack-unsigned-to-bytes n 8)))
+    ((guard (<= -128 n 127))
+     (concat (unibyte-string #xd0) (msgpack-signed-to-bytes n 1)))
+    ((guard (<= (- (expt 2 15)) n (1- (expt 2 15))))
+     (concat (unibyte-string #xd1) (msgpack-signed-to-bytes n 2)))
+    ((guard (<= (- (expt 2 31)) n (1- (expt 2 31))))
+     (concat (unibyte-string #xd2) (msgpack-signed-to-bytes n 4)))
+    ((guard (or (and (> (expt 2 63) 0)  ; need Emacs 27.1's bignum
+                     (<= (- (expt 2 63)) n (1- (expt 2 63))))
+                (<= (min most-negative-fixnum (- (expt 2 63)))
+                    n
+                    (max most-positive-fixnum (1- (expt 2 63))))))
+     (concat (unibyte-string #xd3) (msgpack-signed-to-bytes n 8)))))
+
+(defun msgpack-encode-string (string)
+  "Return a MessagePack representation of UTF-8 STRING."
+  (let ((n (string-bytes string))
+        (s (encode-coding-string string 'utf-8)))
+    (cond
+     ((<= n 31)
+      (concat (unibyte-string (logior #b10100000 n)) s))
+     ((<= n #xff)
+      (concat (unibyte-string #xd9) (msgpack-unsigned-to-bytes n 1) s))
+     ((<= n (1- (expt 2 16)))
+      (concat (unibyte-string #xda) (msgpack-unsigned-to-bytes n 2) s))
+     ((<= n (1- (expt 2 32)))
+      (concat (unibyte-string #xdb) (msgpack-unsigned-to-bytes n 4) s)))))
+
+(defun msgpack-encode-unibyte-string (string)
+  "Return a MessagePack representation of unibyte STRING."
+  (cl-assert (not (multibyte-string-p string)))
+  (let ((n (length string))
+        (s string))
+    (cond
+     ((<= n 255)
+      (concat (unibyte-string #xc4) (msgpack-unsigned-to-bytes n 1) s))
+     ((<= n #xffff)
+      (concat (unibyte-string #xc5) (msgpack-unsigned-to-bytes n 2) s))
+     ((<= n (1- (expt 2 32)))
+      (concat (unibyte-string #xc6) (msgpack-unsigned-to-bytes n 4) s)))))
+
+(defun msgpack-unsigned-to-bits (n)
+  "Convert unsigned integer N to bits."
+  (if (zerop n)
+      (list 0)
+    (let (next bits)
+      (while (> n 0)
+        (setq next (/ n 2))
+        (push (- n (* 2 next)) bits)
+        (setq n next))
+      bits)))
+
+(defun msgpack-split-float (f)
+  "Split float F into integral and fractional parts."
+  (let ((integral (truncate f)))
+    (list integral
+          ;; (- 1.1 1)
+          ;; => 0.10000000000000009
+          ;; https://0.30000000000000004.com/
+          (- f integral))))
+
+(defun msgpack-split-float-the-hard-way (f)
+  "Like `msgpack-split-float' but return the right result."
+  (let* ((s (prin1-to-string f))
+         (pos (cl-position ?. s)))
+    (list (car (read-from-string s 0 pos))
+          (car (read-from-string s pos)))))
+
+(defun msgpack-float-to-bits (f limit)
+  "Convert float F to at most LIMIT bits."
+  (let (bits double (n 0))
+    (while (and (not (zerop f)) (< n limit))
+      (setq double (* f 2))
+      (cond
+       ((>= double 1)
+        (push 1 bits)
+        (setq f (1- double)))
+       (t
+        (push 0 bits)
+        (setq f double)))
+      (cl-incf n))
+    (nreverse bits)))
+
+(defun msgpack-float-to-bits-normalize (ibits fbits)
+  (let* ((index (length ibits))
+         (bits (append ibits fbits))
+         (e (1- (- (length ibits) (cl-position 1 bits)))))
+    (setq index (- index e))
+    (list (cl-subseq bits index) e)))
+
+(defun msgpack-list-pad-right (list len padding)
+  "If LIST is shorter than LEN, pad it with PADDING on the right."
+  (pcase (- len (length list))
+    ((and (pred (< 0)) diff) (append list (make-list diff padding)))
+    (_ list)))
+
+(defun msgpack-list-pad-left (list len padding)
+  "If LIST is shorter than LEN, pad it with PADDING on the left."
+  (pcase (- len (length list))
+    ((and (pred (< 0)) diff) (append (make-list diff padding) list))
+    (_ list)))
+
+(defun msgpack-8bits-to-byte (8bits)
+  "Convert 8BITS to a byte."
+  (cl-loop for i in 8bits
+           for j from 7 downto 0
+           sum (* i (expt 2 j))))
+
+(defun msgpack-bits-to-bytes (bits)
+  "Convert bits to bytes."
+  ;; (cl-assert (zerop (% (length bits) 8)))
+  (cl-loop for i from 0 to (1- 32) by 8
+           concat (unibyte-string (msgpack-8bits-to-byte (cl-subseq bits i (+ i 8))))))
+
+;; Emacs float uses IEEE 64-bit but we can't asscess it from Emacs Lisp
+;; XXX File a feature request
+(defun msgpack-float-to-bytes (f)
+  "Convert float F to IEEE 32-bit."
+  (pcase-let* ((sign (if (< f 0) 1 0))
+               (f (abs f))
+               (`(,int ,frac) (msgpack-split-float-the-hard-way f))
+               (ibits (msgpack-unsigned-to-bits int))
+               (fbits (msgpack-float-to-bits frac 32)) ; XXX why 32?
+               (`(,bits ,e) (msgpack-float-to-bits-normalize ibits fbits))
+               (mantissa (msgpack-list-pad-right bits 23 0))
+               (exponent (msgpack-list-pad-left (msgpack-unsigned-to-bits (+ e 127)) 8 0)))
+    (msgpack-bits-to-bytes (append (list sign) exponent mantissa))))
+
+(defun msgpack-encode-float (f)
+  "Encode LIST as MessagePack float."
+  (concat (unibyte-string #xca) (msgpack-float-to-bytes f)))
+
+(defun msgpack-encode-list (list)
+  "Encode LIST as MessagePack array."
+  (let ((n (length list)))
+    (cond
+     ((<= n 15)
+      (concat (unibyte-string (logior #b10010000 n))
+              (mapconcat #'msgpack-encode list "")))
+     ((<= n #xffff)
+      (concat (unibyte-string #xdc)
+              (msgpack-unsigned-to-bytes n 2)
+              (mapconcat #'msgpack-encode list "")))
+     ((<= n (1- (expt 2 32)))
+      (concat (unibyte-string #xdd)
+              (msgpack-unsigned-to-bytes n 4)
+              (mapconcat #'msgpack-encode list ""))))))
+
+(defun msgpack-encode-alist (alist)
+  "Encode alist as MessagePack map."
+  (let ((n (length alist)))
+    (concat
+     (cond
+      ((<= n 15)
+       (unibyte-string (logior #b10000000 n)))
+      ((<= n #xffff)
+       (unibyte-string #xde (msgpack-unsigned-to-bytes n 2)))
+      ((<= n (1- (expt 2 32)))
+       (unibyte-string #xdf (msgpack-unsigned-to-bytes n 4))))
+     (cl-loop for (k . v) in alist
+              concat (concat
+                      (msgpack-encode (if (symbolp k) (symbol-name k) k))
+                      (msgpack-encode v))))))
+
+(defun msgpack-encode (obj)
+  "Return MessagePack representation of OBJ."
+  (pcase obj
+    ('t (unibyte-string #xc3))
+    ('nil (unibyte-string #xc2))
+    ((pred integerp) (msgpack-encode-integer obj))
+    ((and (pred floatp) (pred zerop)) (msgpack-encode-integer obj))
+    ((pred floatp) (msgpack-encode-float obj))
+    ((pred vectorp) (msgpack-encode-unibyte-string (concat obj)))
+    ((pred stringp) (msgpack-encode-string obj))
+    ((and (pred listp) (pred json-alist-p)) (msgpack-encode-alist obj))
+    ((pred listp) (msgpack-encode-list obj))))
 
 (provide 'msgpack)
 ;;; msgpack.el ends here
