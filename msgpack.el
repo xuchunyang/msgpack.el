@@ -402,10 +402,13 @@ in the result."
     ((pred integerp) (msgpack-encode-integer obj))
     ((and (pred floatp) (pred zerop)) (msgpack-encode-integer obj))
     ((pred floatp) (msgpack-encode-float obj))
-    ((pred vectorp) (msgpack-encode-unibyte-string (concat obj)))
+    ;; XXX does not work for ""
+    ;; ((and (pred stringp) (guard (get-text-property 0 'raw obj)))
+    ;;  (msgpack-encode-unibyte-string obj))
     ((pred stringp) (msgpack-encode-string obj))
     ((and (pred listp) (pred json-alist-p)) (msgpack-encode-alist obj))
-    ((pred listp) (msgpack-encode-list obj))))
+    ((pred listp) (msgpack-encode-list obj))
+    ((pred vectorp) (msgpack-encode-list obj))))
 
 (provide 'msgpack)
 ;;; msgpack.el ends here

@@ -242,7 +242,8 @@
   (should (equal (msgpack-encode t) (unibyte-string #xc3)))
   (should (equal (msgpack-encode '(("compact" . t) ("schema" . 0)))
                  (apply #'unibyte-string
-                        `(#x82 #xa7 ,@(string-to-list "compact") #xc3 #xa6 ,@(string-to-list "schema") 0)))))
+                        `(#x82 #xa7 ,@(string-to-list "compact") #xc3 #xa6 ,@(string-to-list "schema") 0))))
+  (should (equal (msgpack-encode []) (unibyte-string #x90))))
 
 (provide 'msgpack-tests)
 ;;; msgpack-tests.el ends here
