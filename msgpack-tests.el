@@ -74,7 +74,7 @@
   ;; string within [0, 2^32-1] bytes
   (should (equal "" (msgpack-read-from-string (unibyte-string #xdb 0 0 0 0))))
   ;; bin within [0, 255] bytes
-  ((equal (unibyte-string 1 2 3) (msgpack-read-from-string (unibyte-string #xc4 3 1 2 3))))
+  (should (equal (unibyte-string 1 2 3) (msgpack-read-from-string (unibyte-string #xc4 3 1 2 3))))
   ;; bin within [0, 2^16-1] bytes
   (should (equal "" (msgpack-read-from-string (unibyte-string #xc5 0 0))))
   ;; bin within [0, 2^32-1] bytes
@@ -148,15 +148,15 @@
              t))))
 
 (ert-deftest msgpack-unsigned-to-bytes ()
-  (equal (msgpack-unsigned-to-bytes #xabcdef 3) (unibyte-string #xab #xcd #xef))
-  (equal (msgpack-unsigned-to-bytes #x10100 2) (unibyte-string 1 0)))
+  (should (equal (msgpack-unsigned-to-bytes #xabcdef 3) (unibyte-string #xab #xcd #xef)))
+  (should (equal (msgpack-unsigned-to-bytes #x10100 2) (unibyte-string 1 0))))
 
 (ert-deftest msgpack-signed-to-bytes ()
   ;; [-128, 127]
-  (equal (msgpack-signed-to-bytes -128 1) (unibyte-string #x80))
-  (equal (msgpack-signed-to-bytes -13 1) (unibyte-string #b11110011))
-  (equal (msgpack-signed-to-bytes 0 1) (unibyte-string 0))
-  (equal (msgpack-signed-to-bytes 127 1) (unibyte-string #x7f)))
+  (should (equal (msgpack-signed-to-bytes -128 1) (unibyte-string #x80)))
+  (should (equal (msgpack-signed-to-bytes -13 1) (unibyte-string #b11110011)))
+  (should (equal (msgpack-signed-to-bytes 0 1) (unibyte-string 0)))
+  (should (equal (msgpack-signed-to-bytes 127 1) (unibyte-string #x7f))))
 
 (ert-deftest msgpack-encode-integer ()
   ;; [0, 127]
@@ -164,14 +164,14 @@
            do (should (equal (unibyte-string i)
                              (msgpack-encode-integer i))))
   ;; [-32, -1]
-  (equal (msgpack-encode-integer -1) (unibyte-string #xff))
-  (equal (msgpack-encode-integer -16) (unibyte-string #b11110000))
-  (equal (msgpack-encode-integer -32) (unibyte-string #b11100000))
+  (should (equal (msgpack-encode-integer -1) (unibyte-string #xff)))
+  (should (equal (msgpack-encode-integer -16) (unibyte-string #b11110000)))
+  (should (equal (msgpack-encode-integer -32) (unibyte-string #b11100000)))
   ;; [0, 255]
-  (equal (msgpack-encode-integer 128) (unibyte-string #xcc 128))
-  (equal (msgpack-encode-integer 255) (unibyte-string #xcc 255))
+  (should (equal (msgpack-encode-integer 128) (unibyte-string #xcc 128)))
+  (should (equal (msgpack-encode-integer 255) (unibyte-string #xcc 255)))
   ;; [0, #xffff]
-  (equal (msgpack-encode-integer #xffff) (unibyte-string #xcd #xff #xff))
+  (should (equal (msgpack-encode-integer #xffff) (unibyte-string #xcd #xff #xff)))
   ;; [0, #xffffffff]
   (should (equal (msgpack-encode-integer #xffffffff) (unibyte-string #xce #xff #xff #xff #xff)))
   ;; [-128, 127]

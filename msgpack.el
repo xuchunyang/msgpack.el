@@ -27,6 +27,8 @@
 
 ;;; Code:
 
+(require 'json)                         ; `json-alist-p'
+
 (defun msgpack-read-byte ()
   "Read one byte."
   (prog1 (following-char)

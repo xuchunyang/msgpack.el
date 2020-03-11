@@ -20,4 +20,6 @@ jobs:
 
     - uses: actions/checkout@v1
     - name: Byte compile
-      run: 'emacs -Q --batch --eval "(setq byte-compile-error-on-warn t)" -f batch-byte-compile *.el'
+      run: 'emacs -Q --batch --eval "(setq byte-compile-error-on-warn t)" -f batch-byte-compile msgpack.el'
+    - name: Run tests
+      run: 'emacs -Q --batch -L . -l msgpack-tests -f ert-run-tests-batch-and-exit'
