@@ -28,6 +28,7 @@
 ;;; Code:
 
 (require 'json)                         ; `json-alist-p'
+(require 'cl-lib)
 
 (defun msgpack-read-byte ()
   "Read one byte."
