@@ -224,7 +224,8 @@
   (should (equal (msgpack-float-to-bytes -1.1) (unibyte-string #xbf #x8c #xcc #xcd)))
   (should (equal (msgpack-float-to-bytes 1.7) (unibyte-string #x3f #xd9 #x99 #x9a)))
   (should (equal (msgpack-float-to-bytes 123.456) (unibyte-string #x42 #xf6 #xe9 #x79)))
-  (should (equal (msgpack-float-to-bytes .9999999) (unibyte-string #x3f #x7f #xff #xfe))))
+  (should (equal (msgpack-float-to-bytes .9999999) (unibyte-string #x3f #x7f #xff #xfe)))
+  (should (equal (msgpack-bytes-to-hex-string (msgpack-float-to-bytes 3.14)) "4048f5c3")))
 
 (ert-deftest msgpack-encode-list ()
   (should (equal (msgpack-encode-list ()) (unibyte-string #x90)))

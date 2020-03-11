@@ -29,6 +29,7 @@
 
 (require 'json)                         ; `json-alist-p'
 (require 'cl-lib)
+(require 'seq)                          ; `seq-partition'
 
 (defun msgpack-read-byte ()
   "Read one byte."
@@ -334,6 +335,21 @@ Advances point just past MessagePack object."
       (if (and too-many (= 1 (nth 23 bits)))
           (msgpack-unsigned-to-bytes (1+ (msgpack-bytes-to-unsigned bytes)) 4)
         bytes))))
+
+(defun msgpack-bytes-to-hex-string (bytes)
+  "Convert BYTES to a string representation.
+Each byte in BYTES is converted to its two-digit hexadecimal
+representation in the resulting string."
+  (mapconcat (lambda (b) (format "%x" b)) bytes ""))
+
+(defun msgpack-hex-string-to-bytes (string)
+  "Convert STRING to BYTES.
+Each pair of characters in STRING is converted to a single byte
+in the result."
+  (mapconcat
+   (lambda (s) (unibyte-string (string-to-number s 16)))
+   (seq-partition string 2)
+   ""))
 
 (defun msgpack-encode-float (f)
   "Encode float F as MessagePack float."
