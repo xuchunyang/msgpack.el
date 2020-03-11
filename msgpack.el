@@ -318,15 +318,22 @@ Advances point just past MessagePack object."
 ;; XXX File a feature request
 (defun msgpack-float-to-bytes (f)
   "Convert float F to IEEE 32-bit."
+  ;; http://sandbox.mc.edu/~bennet/cs110/flt/dtof.html
   (pcase-let* ((sign (if (< f 0) 1 0))
                (f (abs f))
                (`(,int ,frac) (msgpack-split-float-the-hard-way f))
                (ibits (msgpack-unsigned-to-bits int))
                (fbits (msgpack-float-to-bits frac 32)) ; XXX why 32?
                (`(,bits ,e) (msgpack-float-to-bits-normalize ibits fbits))
-               (mantissa (msgpack-list-pad-right bits 23 0))
+               (too-many (> (length bits) 23))
+               (mantissa (if too-many
+                             (cl-subseq bits 0 23)
+                           (msgpack-list-pad-right bits 23 0)))
                (exponent (msgpack-list-pad-left (msgpack-unsigned-to-bits (+ e 127)) 8 0)))
-    (msgpack-bits-to-bytes (append (list sign) exponent mantissa))))
+    (let ((bytes (msgpack-bits-to-bytes (append (list sign) exponent mantissa))))
+      (if too-many
+          (msgpack-unsigned-to-bytes (1+ (msgpack-bytes-to-unsigned bytes)) 4)
+        bytes))))
 
 (defun msgpack-encode-float (f)
   "Encode float F as MessagePack float."
