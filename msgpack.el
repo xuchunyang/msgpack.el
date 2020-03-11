@@ -362,7 +362,7 @@ Advances point just past MessagePack object."
                       (msgpack-encode v))))))
 
 (defun msgpack-encode (obj)
-  "Return MessagePack representation of OBJ."
+  "Return MessagePack representation of Emacs Lisp OBJ."
   (pcase obj
     ('t (unibyte-string #xc3))
     ('nil (unibyte-string #xc2))
