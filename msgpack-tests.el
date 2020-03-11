@@ -221,8 +221,10 @@
 (ert-deftest msgpack-float-to-bytes ()
   (should (equal (msgpack-float-to-bytes 0.15625) (unibyte-string #x3e #x20 #x00 #x00)))
   (should (equal (msgpack-float-to-bytes 1.1) (unibyte-string #x3f #x8c #xcc #xcd)))
+  (should (equal (msgpack-float-to-bytes -1.1) (unibyte-string #xbf #x8c #xcc #xcd)))
   (should (equal (msgpack-float-to-bytes 1.7) (unibyte-string #x3f #xd9 #x99 #x9a)))
-  (should (equal (msgpack-float-to-bytes 123.456) (unibyte-string #x42 #xf6 #xe9 #x79))))
+  (should (equal (msgpack-float-to-bytes 123.456) (unibyte-string #x42 #xf6 #xe9 #x79)))
+  (should (equal (msgpack-float-to-bytes .9999999) (unibyte-string #x3f #x7f #xff #xfe))))
 
 (ert-deftest msgpack-encode-list ()
   (should (equal (msgpack-encode-list ()) (unibyte-string #x90)))

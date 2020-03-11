@@ -331,7 +331,7 @@ Advances point just past MessagePack object."
                            (msgpack-list-pad-right bits 23 0)))
                (exponent (msgpack-list-pad-left (msgpack-unsigned-to-bits (+ e 127)) 8 0)))
     (let ((bytes (msgpack-bits-to-bytes (append (list sign) exponent mantissa))))
-      (if too-many
+      (if (and too-many (= 1 (nth 23 bits)))
           (msgpack-unsigned-to-bytes (1+ (msgpack-bytes-to-unsigned bytes)) 4)
         bytes))))
 
