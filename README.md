@@ -1,6 +1,6 @@
-# [MessagePack](https://msgpack.org/) Emacs Lisp library
+# MessagePack Emacs Lisp library
 
-msgpack.el is an Emacs Lisp library for decoding and encoding MessagePack.
+msgpack.el is an Emacs Lisp library for reading and writing [MessagePack](https://msgpack.org/).
 
 ``` emacs-lisp
 (msgpack-read-from-string "\x82\xA5Hello\xA5World\x1\x2")
