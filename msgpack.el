@@ -259,7 +259,7 @@ Advances point just past MessagePack object."
           (- f integral))))
 
 (defun msgpack-split-float-the-hard-way (f)
-  "Like `msgpack-split-float' but return the right result."
+  "Split float F into integral and fractional parts."
   (let* ((s (prin1-to-string f))
          (pos (cl-position ?. s)))
     (list (car (read-from-string s 0 pos))
@@ -306,7 +306,7 @@ Advances point just past MessagePack object."
            sum (* i (expt 2 j))))
 
 (defun msgpack-bits-to-bytes (bits)
-  "Convert bits to bytes."
+  "Convert BITS to bytes."
   ;; (cl-assert (zerop (% (length bits) 8)))
   (cl-loop for i from 0 to (1- 32) by 8
            concat (unibyte-string (msgpack-8bits-to-byte (cl-subseq bits i (+ i 8))))))
@@ -326,7 +326,7 @@ Advances point just past MessagePack object."
     (msgpack-bits-to-bytes (append (list sign) exponent mantissa))))
 
 (defun msgpack-encode-float (f)
-  "Encode LIST as MessagePack float."
+  "Encode float F as MessagePack float."
   (concat (unibyte-string #xca) (msgpack-float-to-bytes f)))
 
 (defun msgpack-encode-list (list)
@@ -346,7 +346,7 @@ Advances point just past MessagePack object."
               (mapconcat #'msgpack-encode list ""))))))
 
 (defun msgpack-encode-alist (alist)
-  "Encode alist as MessagePack map."
+  "Encode ALIST as MessagePack map."
   (let ((n (length alist)))
     (concat
      (cond
