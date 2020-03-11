@@ -31,6 +31,12 @@
 (require 'cl-lib)
 (require 'seq)                          ; `seq-partition'
 
+(defvar msgpack-false :msgpack-false
+  "Value to use when reading and writing MessagePack `false'.")
+
+(defvar msgpack-null nil
+  "Value to use when reading and writing MessagePack `null'.")
+
 (defun msgpack-read-byte ()
   "Read one byte."
   (prog1 (following-char)
@@ -390,8 +396,9 @@ in the result."
 (defun msgpack-encode (obj)
   "Return MessagePack representation of Emacs Lisp OBJ."
   (pcase obj
+    ((pred (eq msgpack-null)) (unibyte-string #xc0))
+    ((pred (eq msgpack-false)) (unibyte-string #xc2))
     ('t (unibyte-string #xc3))
-    ('nil (unibyte-string #xc2))
     ((pred integerp) (msgpack-encode-integer obj))
     ((and (pred floatp) (pred zerop)) (msgpack-encode-integer obj))
     ((pred floatp) (msgpack-encode-float obj))

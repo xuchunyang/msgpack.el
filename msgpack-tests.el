@@ -236,6 +236,9 @@
   (should (equal (msgpack-encode-alist '((1 . 2) (3 . 4))) (unibyte-string #b10000010 1 2 3 4))))
 
 (ert-deftest msgpack-encode ()
+  (should (equal (msgpack-bytes-to-hex-string (msgpack-encode nil)) "c0"))
+  (should (equal (msgpack-bytes-to-hex-string (msgpack-encode :msgpack-false)) "c2"))
+  (should (equal (msgpack-bytes-to-hex-string (msgpack-encode t)) "c3"))
   (should (equal (msgpack-encode t) (unibyte-string #xc3)))
   (should (equal (msgpack-encode '(("compact" . t) ("schema" . 0)))
                  (apply #'unibyte-string
