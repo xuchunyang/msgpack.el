@@ -246,20 +246,8 @@
   (should (equal (msgpack-encode []) (unibyte-string #x90))))
 
 (ert-deftest msgpack-try-read ()
-  (should
-   (with-temp-buffer
-     (set-buffer-multibyte nil)
-     (insert #xa5 "hello")
-     (goto-char (point-min))
-     (msgpack-try-read)
-     t))
-  (should-error
-   (with-temp-buffer
-     (set-buffer-multibyte nil)
-     (insert #xa5 "hell")
-     (goto-char (point-min))
-     (msgpack-try-read))
-   :type 'end-of-buffer))
+  (should (progn (msgpack-try-read-from-string "\xa5hello") t))
+  (should-error (msgpack-try-read-from-string "\xa5hell") :type 'end-of-buffer))
 
 (provide 'msgpack-tests)
 ;;; msgpack-tests.el ends here

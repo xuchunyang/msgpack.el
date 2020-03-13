@@ -470,5 +470,15 @@ MessagePack object is completed."
             (cl-loop repeat (msgpack-bits-to-unsigned bits)
                      do (msgpack-try-read) (msgpack-try-read))))))))
 
+(defun msgpack-try-read-from-string (string)
+  "Signal end-of-buffer if STRING is not a MessagePack object."
+  (cl-assert (not (multibyte-string-p string)))
+  (with-temp-buffer
+    (set-buffer-multibyte nil)
+    (insert string)
+    (goto-char (point-min))
+    (msgpack-try-read)
+    nil))
+
 (provide 'msgpack)
 ;;; msgpack.el ends here
