@@ -101,9 +101,18 @@
     (* (expt -1 sign) (expt 2 (- e 1023)) fraction)))
 
 (cl-defstruct (msgpack-ext (:constructor nil)
-                           (:constructor msgpack-ext-make (type data))
+                           (:constructor msgpack-ext--make (type data))
                            (:copier nil))
+  "Represent MessagePack ext."
   type data)
+
+(defun msgpack-ext-make (type data)
+  "Make a msgpack-ext object.
+TYPE must be an integer within [-128, 127].
+DATA must be a unibyte string."
+  (cl-assert (<= -128 type 127))
+  (cl-assert (not (multibyte-string-p data)))
+  (msgpack-ext--make type data))
 
 (defun msgpack-read ()
   "Parse and return the MessagePack object following point.
@@ -149,7 +158,6 @@ Advances point just past MessagePack object."
       ;; ext
       (#xd4 (msgpack-ext-make (msgpack-read-byte) (msgpack-read-bytes 1)))
       (#xd5 (msgpack-ext-make (msgpack-read-byte) (msgpack-read-bytes 2)))
-      ;; XXX timestamps
       (#xd6 (msgpack-ext-make (msgpack-read-byte) (msgpack-read-bytes 4)))
       (#xd7 (msgpack-ext-make (msgpack-read-byte) (msgpack-read-bytes 8)))
       (#xd8 (msgpack-ext-make (msgpack-read-byte) (msgpack-read-bytes 16)))
@@ -402,8 +410,35 @@ in the result."
 Use it if you need to write MessagePack byte array."
   string)
 
+(defun msgpack-string-pad-right (s len padding)
+  "If S is shorter than LEN, pad it with PADDING on the right."
+  (if (< (length s) len)
+      (concat s (make-string (- len (length s)) padding))
+    s))
+
+(defun msgpack-encode-ext (ext)
+  "Encode EXT as MessagePack ext."
+  (pcase-exhaustive ext
+    ((cl-struct msgpack-ext type data)
+     (let ((len (length data)))
+       (concat
+        (pcase-exhaustive len
+          (1 (unibyte-string #xd4))
+          (2 (unibyte-string #xd5))
+          (4 (unibyte-string #xd6))
+          (8 (unibyte-string #xd7))
+          (16 (unibyte-string #xd8))
+          ((guard (<= len #xff))
+           (concat (unibyte-string #xc7) (msgpack-unsigned-to-bytes len 1)))
+          ((guard (<= len #xffff))
+           (concat (unibyte-string #xc8) (msgpack-unsigned-to-bytes len 2)))
+          ((guard (<= len #xffffffff))
+           (concat (unibyte-string #xc9) (msgpack-unsigned-to-bytes len 4))))
+        (unibyte-string type)
+        data)))))
+
 (defun msgpack-encode (obj)
-  "Return MessagePack representation of Emacs Lisp OBJ."
+  "Return MessagePack representation of OBJ."
   (pcase obj
     ((pred (eq msgpack-null)) (unibyte-string #xc0))
     ((pred (eq msgpack-false)) (unibyte-string #xc2))
@@ -416,7 +451,8 @@ Use it if you need to write MessagePack byte array."
     ((and (pred listp) (pred json-alist-p)) (msgpack-encode-alist obj))
     ((pred hash-table-p) (msgpack-encode-alist (map-into obj 'list)))
     ((pred listp) (msgpack-encode-list obj))
-    ((pred vectorp) (msgpack-encode-list obj))))
+    ((pred vectorp) (msgpack-encode-list obj))
+    ((cl-struct msgpack-ext) (msgpack-encode-ext obj))))
 
 (defun msgpack-try-read ()
   "Detect if there is a MessagePack object following point.

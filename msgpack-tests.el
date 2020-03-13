@@ -251,6 +251,12 @@
   (should (equal (msgpack-encode-alist ()) (unibyte-string #x80)))
   (should (equal (msgpack-encode-alist '((1 . 2) (3 . 4))) (unibyte-string #b10000010 1 2 3 4))))
 
+(ert-deftest msgpack-encode-ext ()
+  (should (equal (msgpack-encode-ext (msgpack-ext-make 42 "ABCD"))
+                 (msgpack-tests-unibyte-string #xd6 42 "ABCD")))
+  (should (equal (msgpack-encode-ext (msgpack-ext-make 42 "ABC"))
+                 (msgpack-tests-unibyte-string #xc7 3 42 "ABC"))))
+
 (ert-deftest msgpack-encode ()
   (should (equal (msgpack-bytes-to-hex-string (msgpack-encode nil)) "c0"))
   (should (equal (msgpack-bytes-to-hex-string (msgpack-encode :msgpack-false)) "c2"))
@@ -262,7 +268,9 @@
                  (msgpack-tests-unibyte-string #x82 #xa7 "compact" #xc3 #xa6 "schema" 0)))
   (should (equal (msgpack-encode []) (unibyte-string #x90)))
   (should (equal (msgpack-encode (msgpack-bin-make "bin"))
-                 (msgpack-tests-unibyte-string #xc4 3 "bin"))))
+                 (msgpack-tests-unibyte-string #xc4 3 "bin")))
+  (should (equal (msgpack-encode (msgpack-ext-make 0 "x"))
+                 (msgpack-tests-unibyte-string #xd4 0 "x"))))
 
 (ert-deftest msgpack-try-read ()
   (should (progn (msgpack-try-read-from-string "\xa5hello") t))
