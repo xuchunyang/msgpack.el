@@ -371,21 +371,27 @@ in the result."
   "Encode float F as MessagePack float."
   (concat (unibyte-string #xca) (msgpack-float-to-bytes f)))
 
-(defun msgpack-encode-list (list)
-  "Encode LIST as MessagePack array."
-  (let ((n (length list)))
+(defun msgpack-encode-array (array)
+  "Return a MessagePack representation of ARRAY."
+  (let ((n (length array)))
     (cond
      ((<= n 15)
       (concat (unibyte-string (logior #b10010000 n))
-              (mapconcat #'msgpack-encode list "")))
+              (mapconcat #'msgpack-encode array "")))
      ((<= n #xffff)
       (concat (unibyte-string #xdc)
               (msgpack-unsigned-to-bytes n 2)
-              (mapconcat #'msgpack-encode list "")))
+              (mapconcat #'msgpack-encode array "")))
      ((<= n (1- (expt 2 32)))
       (concat (unibyte-string #xdd)
               (msgpack-unsigned-to-bytes n 4)
-              (mapconcat #'msgpack-encode list ""))))))
+              (mapconcat #'msgpack-encode array ""))))))
+
+(defun msgpack-encode-list (list)
+  "Encode LIST as MessagePack array or map accordingly."
+  (pcase-exhaustive list
+    ((pred json-alist-p) (msgpack-encode-alist list))
+    ((pred listp) (msgpack-encode-array list))))
 
 (defun msgpack-encode-alist (alist)
   "Encode ALIST as MessagePack map."
@@ -440,19 +446,25 @@ Use it if you need to write MessagePack byte array."
 (defun msgpack-encode (obj)
   "Return MessagePack representation of OBJ."
   (pcase obj
+    ;; null, false, true
     ((pred (eq msgpack-null)) (unibyte-string #xc0))
     ((pred (eq msgpack-false)) (unibyte-string #xc2))
     ('t (unibyte-string #xc3))
+    ;; integer, float
     ((pred integerp) (msgpack-encode-integer obj))
-    ((and (pred floatp) (pred zerop)) (msgpack-encode-integer obj))
+    ((and (pred floatp) (pred zerop)) (msgpack-encode-integer 0))
     ((pred floatp) (msgpack-encode-float obj))
-    ((cl-struct msgpack-bin string) (msgpack-encode-unibyte-string string))
+    ;; string, byte array
     ((pred stringp) (msgpack-encode-string obj))
-    ((and (pred listp) (pred json-alist-p)) (msgpack-encode-alist obj))
+    ((cl-struct msgpack-bin string) (msgpack-encode-unibyte-string string))
+    ;; array
+    ((pred vectorp) (msgpack-encode-array obj))
+    ;; map
     ((pred hash-table-p) (msgpack-encode-alist (map-into obj 'list)))
-    ((pred listp) (msgpack-encode-list obj))
-    ((pred vectorp) (msgpack-encode-list obj))
-    ((cl-struct msgpack-ext) (msgpack-encode-ext obj))))
+    ;; ext
+    ((cl-struct msgpack-ext) (msgpack-encode-ext obj))
+    ;; encode list as array or map according to its content
+    ((pred listp) (msgpack-encode-list obj))))
 
 (defun msgpack-try-read ()
   "Detect if there is a MessagePack object following point.

@@ -243,13 +243,17 @@
   (should (equal (msgpack-float-to-bytes .9999999) (unibyte-string #x3f #x7f #xff #xfe)))
   (should (equal (msgpack-bytes-to-hex-string (msgpack-float-to-bytes 3.14)) "4048f5c3")))
 
-(ert-deftest msgpack-encode-list ()
-  (should (equal (msgpack-encode-list ()) (unibyte-string #x90)))
-  (should (equal (msgpack-encode-list '(1 2 3)) (unibyte-string #b10010011 1 2 3))))
+(ert-deftest msgpack-encode-array ()
+  (should (equal (msgpack-encode-array ()) (unibyte-string #x90)))
+  (should (equal (msgpack-encode-array '(1 2 3)) (unibyte-string #b10010011 1 2 3))))
 
 (ert-deftest msgpack-encode-alist ()
   (should (equal (msgpack-encode-alist ()) (unibyte-string #x80)))
   (should (equal (msgpack-encode-alist '((1 . 2) (3 . 4))) (unibyte-string #b10000010 1 2 3 4))))
+
+(ert-deftest msgpack-encode-list ()
+  (should (equal (msgpack-encode-list '((1 . 2) (3 . 4))) (unibyte-string #b10000010 1 2 3 4)))
+  (should (equal (msgpack-encode-list '(1 2 3 4)) (unibyte-string #b10010100 1 2 3 4))))
 
 (ert-deftest msgpack-encode-ext ()
   (should (equal (msgpack-encode-ext (msgpack-ext-make 42 "ABCD"))
