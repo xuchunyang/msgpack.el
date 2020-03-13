@@ -44,8 +44,9 @@
 
 (defun msgpack-read-bytes (amt)
   "Read AMT bytes."
-  (prog1 (buffer-substring-no-properties (point) (+ (point) amt))
-    (forward-char amt)))
+  (let ((op (point)))
+    (forward-char amt)
+    (buffer-substring-no-properties op (point))))
 
 (defun msgpack-byte-to-bits (byte)
   "Convert 1 BYTE to a list of 8 bits."
