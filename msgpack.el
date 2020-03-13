@@ -391,6 +391,7 @@ in the result."
   "Encode LIST as MessagePack array or map accordingly."
   (pcase-exhaustive list
     ((pred json-alist-p) (msgpack-encode-alist list))
+    ((pred json-plist-p) (msgpack-encode-plist list))
     ((pred listp) (msgpack-encode-array list))))
 
 (defun msgpack-encode-alist (alist)
@@ -408,6 +409,20 @@ in the result."
               concat (concat
                       (msgpack-encode k)
                       (msgpack-encode v))))))
+
+;; `json--plist-to-alist'
+(defun msgpack-plist-to-alist (plist)
+  "Return an alist of the property-value pairs in PLIST."
+  (let (res)
+    (while plist
+      (let ((prop (pop plist))
+            (val (pop plist)))
+        (push (cons prop val) res)))
+    (nreverse res)))
+
+(defun msgpack-encode-plist (plist)
+  "Encode PLIST as MessagePack map."
+  (msgpack-encode-alist (msgpack-plist-to-alist plist)))
 
 (cl-defstruct (msgpack-bin (:constructor nil)
                            (:constructor msgpack-bin-make (string))
@@ -445,7 +460,7 @@ Use it if you need to write MessagePack byte array."
 
 (defun msgpack-encode (obj)
   "Return MessagePack representation of OBJ."
-  (pcase obj
+  (pcase-exhaustive obj
     ;; null, false, true
     ((pred (eq msgpack-null)) (unibyte-string #xc0))
     ((pred (eq msgpack-false)) (unibyte-string #xc2))

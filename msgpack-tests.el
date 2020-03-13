@@ -251,9 +251,16 @@
   (should (equal (msgpack-encode-alist ()) (unibyte-string #x80)))
   (should (equal (msgpack-encode-alist '((1 . 2) (3 . 4))) (unibyte-string #b10000010 1 2 3 4))))
 
+(ert-deftest msgpack-encode-plist ()
+  (should (equal (msgpack-encode-plist '(1 2 3 4)) (unibyte-string #b10000010 1 2 3 4)))
+  (should (equal (msgpack-encode-plist '(:a 1 :b 2))
+                 (unibyte-string #b10000010 #b10100001 ?a 1 #b10100001 ?b 2))))
+
 (ert-deftest msgpack-encode-list ()
   (should (equal (msgpack-encode-list '((1 . 2) (3 . 4))) (unibyte-string #b10000010 1 2 3 4)))
-  (should (equal (msgpack-encode-list '(1 2 3 4)) (unibyte-string #b10010100 1 2 3 4))))
+  (should (equal (msgpack-encode-list '(1 2 3 4)) (unibyte-string #b10010100 1 2 3 4)))
+  (should (equal (msgpack-encode-list '(:a 1 :b 2))
+                 (unibyte-string #b10000010 #b10100001 ?a 1 #b10100001 ?b 2))))
 
 (ert-deftest msgpack-encode-ext ()
   (should (equal (msgpack-encode-ext (msgpack-ext-make 42 "ABCD"))
