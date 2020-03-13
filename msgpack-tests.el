@@ -26,22 +26,6 @@
 (require 'ert)
 (require 'msgpack)
 
-(defun msgpack-tests-unibyte-string (&rest args)
-  "Build a unibyte-string with ARGS and return it."
-  (mapconcat
-   (lambda (x)
-     (pcase x
-       ((and (pred stringp) s)
-        (when (multibyte-string-p s)
-          (error "multibyte string: %s" s))
-        s)
-       ((and (pred integerp) n)
-        (unless (<= 0 n 255)
-          (error "not within [0, 255]: %d" n))
-        (unibyte-string n))))
-   args
-   ""))
-
 (ert-deftest msgpack-read ()
   ;; nil, false, true
   (should-not (msgpack-read-from-string (unibyte-string #xc0)))
@@ -264,9 +248,9 @@
 
 (ert-deftest msgpack-encode-ext ()
   (should (equal (msgpack-encode-ext (msgpack-ext-make 42 "ABCD"))
-                 (msgpack-tests-unibyte-string #xd6 42 "ABCD")))
+                 (msgpack-concat #xd6 42 "ABCD")))
   (should (equal (msgpack-encode-ext (msgpack-ext-make 42 "ABC"))
-                 (msgpack-tests-unibyte-string #xc7 3 42 "ABC"))))
+                 (msgpack-concat #xc7 3 42 "ABC"))))
 
 (ert-deftest msgpack-encode ()
   (should (equal (msgpack-bytes-to-hex-string (msgpack-encode nil)) "c0"))
@@ -274,29 +258,34 @@
   (should (equal (msgpack-bytes-to-hex-string (msgpack-encode t)) "c3"))
   (should (equal (msgpack-encode t) (unibyte-string #xc3)))
   (should (equal (msgpack-encode '(("compact" . t) ("schema" . 0)))
-                 (msgpack-tests-unibyte-string #x82 #xa7 "compact" #xc3 #xa6 "schema" 0)))
+                 (msgpack-concat #x82 #xa7 "compact" #xc3 #xa6 "schema" 0)))
   (should (equal (msgpack-encode #s(hash-table test equal size 2 data (compact t schema 0)))
-                 (msgpack-tests-unibyte-string #x82 #xa7 "compact" #xc3 #xa6 "schema" 0)))
+                 (msgpack-concat #x82 #xa7 "compact" #xc3 #xa6 "schema" 0)))
   (should (equal (msgpack-encode []) (unibyte-string #x90)))
   (should (equal (msgpack-encode (msgpack-bin-make "bin"))
-                 (msgpack-tests-unibyte-string #xc4 3 "bin")))
+                 (msgpack-concat #xc4 3 "bin")))
   (should (equal (msgpack-encode (msgpack-ext-make 0 "x"))
-                 (msgpack-tests-unibyte-string #xd4 0 "x")))
+                 (msgpack-concat #xd4 0 "x")))
   (should (equal (msgpack-encode :key)
-                 (msgpack-tests-unibyte-string #b10100011 "key")))
+                 (msgpack-concat #b10100011 "key")))
   (should (equal (msgpack-encode 'key)
-                 (msgpack-tests-unibyte-string #b10100011 "key"))))
+                 (msgpack-concat #b10100011 "key"))))
 
 (ert-deftest msgpack-try-read ()
   (should (progn (msgpack-try-read-from-string "\xa5hello") t))
   (should-error (msgpack-try-read-from-string "\xa5hell") :type 'end-of-buffer)
   (should-error (msgpack-try-read-from-string
-                 (msgpack-tests-unibyte-string
+                 (msgpack-concat
                   #x82                  ; map, 2 pairs
                   #xa7 "compact"        ; str
                   #xc3                  ; bool, t
                   #xa6 "schema"))       ; str
                 :type 'end-of-buffer))
+
+(ert-deftest msgpack-array-type ()
+  (should (listp (msgpack-read-from-string (msgpack-encode [1 2 3]))))
+  (should (let ((msgpack-array-type 'vector))
+            (vectorp (msgpack-read-from-string (msgpack-encode [1 2 3]))))))
 
 (provide 'msgpack-tests)
 ;;; msgpack-tests.el ends here

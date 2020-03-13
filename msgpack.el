@@ -38,6 +38,11 @@
 (defvar msgpack-null nil
   "Value to use when reading and writing MessagePack `null'.")
 
+(defvar msgpack-array-type 'list
+  "Type to convert MessagePack arrays to.
+Must be one of `vector' or `list'.  Consider let-binding this around
+your call to `msgpack-read' instead of `setq'ing it.")
+
 (defun msgpack-read-byte ()
   "Read one byte."
   (prog1 (following-char)
@@ -100,6 +105,21 @@
                                 sum (* b (expt 2 (- i)))))))
     (* (expt -1 sign) (expt 2 (- e 1023)) fraction)))
 
+(defun msgpack-concat (&rest args)
+  "Concatenate all the arguments ARGS and make the result a unibyte string."
+  (mapconcat
+   (lambda (x)
+     (cl-assert x)
+     (pcase-exhaustive x
+       ((and (pred stringp) s)
+        (cl-assert (not (multibyte-string-p s)))
+        s)
+       ((and (pred integerp) n)
+        (cl-assert (<= 0 n 255))
+        (unibyte-string n))))
+   args
+   ""))
+
 (cl-defstruct (msgpack-ext (:constructor nil)
                            (:constructor msgpack-ext--make (type data))
                            (:copier nil))
@@ -113,6 +133,14 @@ DATA must be a unibyte string."
   (cl-assert (<= -128 type 127))
   (cl-assert (not (multibyte-string-p data)))
   (msgpack-ext--make type data))
+
+(defun msgpack-read-array (len)
+  "Read a MessagePack array with LEN elements."
+  (cl-loop repeat len
+           collect (msgpack-read) into l
+           finally return (pcase-exhaustive msgpack-array-type
+                            ('vector (vconcat l))
+                            ('list l))))
 
 (defun msgpack-read ()
   "Parse and return the MessagePack object following point.
@@ -146,10 +174,8 @@ Advances point just past MessagePack object."
       (#xc5 (msgpack-read-bytes (msgpack-bytes-to-unsigned (msgpack-read-bytes 2))))
       (#xc6 (msgpack-read-bytes (msgpack-bytes-to-unsigned (msgpack-read-bytes 4))))
       ;; array
-      (#xdc (cl-loop repeat (msgpack-bytes-to-unsigned (msgpack-read-bytes 2))
-                     collect (msgpack-read)))
-      (#xdd (cl-loop repeat (msgpack-bytes-to-unsigned (msgpack-read-bytes 4))
-                     collect (msgpack-read)))
+      (#xdc (msgpack-read-array (msgpack-bytes-to-unsigned (msgpack-read-bytes 2))))
+      (#xdd (msgpack-read-array (msgpack-bytes-to-unsigned (msgpack-read-bytes 4))))
       ;; map
       (#xde (cl-loop repeat (msgpack-bytes-to-unsigned (msgpack-read-bytes 2))
                      collect (cons (msgpack-read) (msgpack-read))))
@@ -169,10 +195,13 @@ Advances point just past MessagePack object."
               (msgpack-ext-make (msgpack-read-byte) (msgpack-read-bytes len))))
       (_ (pcase (msgpack-byte-to-bits b)
            (`(0 . ,_) b)
+           ;; negative fixint
            (`(1 1 1 . ,bits) (- (msgpack-bits-to-unsigned bits) (expt 2 5)))
+           ;; string
            (`(1 0 1 . ,bits) (decode-coding-string (msgpack-read-bytes (msgpack-bits-to-unsigned bits)) 'utf-8))
-           (`(1 0 0 1 . ,bits) (cl-loop repeat (msgpack-bits-to-unsigned bits)
-                                        collect (msgpack-read)))
+           ;; array
+           (`(1 0 0 1 . ,bits) (msgpack-read-array (msgpack-bits-to-unsigned bits)))
+           ;; map
            (`(1 0 0 0 . ,bits) (cl-loop repeat (msgpack-bits-to-unsigned bits)
                                         collect (cons (msgpack-read) (msgpack-read)))))))))
 
