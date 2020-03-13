@@ -3,12 +3,11 @@
 msgpack.el is an Emacs Lisp library for reading and writing [MessagePack](https://msgpack.org/).
 
 ``` emacs-lisp
-(msgpack-read-from-string "\x82\xA5Hello\xA5World\x1\x2")
-;; => (("Hello" . "World") (1 . 2))
+(msgpack-read-from-string "\xA5Hello")
+;; => "Hello"
 
-(equal "\x82\xA5Hello\xA5World\x1\x2"
-       (msgpack-encode '(("Hello" . "World") (1 . 2))))
-;; => t
+(msgpack-encode "Hello")
+;; => "\245Hello"
 ```
 
 ## API
@@ -24,7 +23,17 @@ Advances point just past MessagePack object.
 
 ### `(msgpack-encode OBJ)`
 
-Return MessagePack representation of Emacs Lisp OBJ.
+Return MessagePack representation of OBJ.
+
+### `msgpack-false` (defaults to `:msgpack-false`)
+
+### `msgpack-null` (defaults to `nil`)
+
+### `msgpack-array-type` (defaults to `list`)
+
+### `msgpack-map-type` (defaults to `alist`)
+
+### `msgpack-key-type` (defaults to `nil`)
 
 ## Requirements
 
