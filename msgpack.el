@@ -406,7 +406,7 @@ in the result."
        (unibyte-string #xdf (msgpack-unsigned-to-bytes n 4))))
      (cl-loop for (k . v) in alist
               concat (concat
-                      (msgpack-encode (if (symbolp k) (symbol-name k) k))
+                      (msgpack-encode k)
                       (msgpack-encode v))))))
 
 (cl-defstruct (msgpack-bin (:constructor nil)
@@ -463,6 +463,9 @@ Use it if you need to write MessagePack byte array."
     ((pred hash-table-p) (msgpack-encode-alist (map-into obj 'list)))
     ;; ext
     ((cl-struct msgpack-ext) (msgpack-encode-ext obj))
+    ;; encode symbols and keywords as string
+    ((pred keywordp) (msgpack-encode-string (substring (symbol-name obj) 1)))
+    ((pred symbolp) (msgpack-encode-string (symbol-name obj)))
     ;; encode list as array or map according to its content
     ((pred listp) (msgpack-encode-list obj))))
 

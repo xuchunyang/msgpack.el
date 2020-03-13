@@ -274,7 +274,11 @@
   (should (equal (msgpack-encode (msgpack-bin-make "bin"))
                  (msgpack-tests-unibyte-string #xc4 3 "bin")))
   (should (equal (msgpack-encode (msgpack-ext-make 0 "x"))
-                 (msgpack-tests-unibyte-string #xd4 0 "x"))))
+                 (msgpack-tests-unibyte-string #xd4 0 "x")))
+  (should (equal (msgpack-encode :key)
+                 (msgpack-tests-unibyte-string #b10100011 "key")))
+  (should (equal (msgpack-encode 'key)
+                 (msgpack-tests-unibyte-string #b10100011 "key"))))
 
 (ert-deftest msgpack-try-read ()
   (should (progn (msgpack-try-read-from-string "\xa5hello") t))
