@@ -247,7 +247,15 @@
 
 (ert-deftest msgpack-try-read ()
   (should (progn (msgpack-try-read-from-string "\xa5hello") t))
-  (should-error (msgpack-try-read-from-string "\xa5hell") :type 'end-of-buffer))
+  (should-error (msgpack-try-read-from-string "\xa5hell") :type 'end-of-buffer)
+  (should-error (msgpack-try-read-from-string
+                 (concat (unibyte-string #x82 #xa7)
+                         "compact"
+                         (unibyte-string #xc3 #xa6)
+                         "schema"
+                         ;; "\x0"
+                         ))
+                :type 'end-of-buffer))
 
 (provide 'msgpack-tests)
 ;;; msgpack-tests.el ends here
