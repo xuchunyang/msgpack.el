@@ -394,6 +394,13 @@ in the result."
                       (msgpack-encode (if (symbolp k) (symbol-name k) k))
                       (msgpack-encode v))))))
 
+(cl-defstruct (msgpack-bin (:constructor nil)
+                           (:constructor msgpack-bin-make (string))
+                           (:copier nil))
+  "Wrapper of unibyte string to represent MessagePack byte array.
+Use it if you need to write MessagePack byte array."
+  string)
+
 (defun msgpack-encode (obj)
   "Return MessagePack representation of Emacs Lisp OBJ."
   (pcase obj
@@ -403,9 +410,7 @@ in the result."
     ((pred integerp) (msgpack-encode-integer obj))
     ((and (pred floatp) (pred zerop)) (msgpack-encode-integer obj))
     ((pred floatp) (msgpack-encode-float obj))
-    ;; XXX does not work for ""
-    ;; ((and (pred stringp) (guard (get-text-property 0 'raw obj)))
-    ;;  (msgpack-encode-unibyte-string obj))
+    ((cl-struct msgpack-bin string) (msgpack-encode-unibyte-string string))
     ((pred stringp) (msgpack-encode-string obj))
     ((and (pred listp) (pred json-alist-p)) (msgpack-encode-alist obj))
     ((pred listp) (msgpack-encode-list obj))

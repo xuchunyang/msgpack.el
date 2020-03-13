@@ -26,6 +26,22 @@
 (require 'ert)
 (require 'msgpack)
 
+(defun msgpack-tests-unibyte-string (&rest args)
+  "Build a unibyte-string with ARGS and return it."
+  (mapconcat
+   (lambda (x)
+     (pcase x
+       ((and (pred stringp) s)
+        (when (multibyte-string-p s)
+          (error "multibyte string: %s" s))
+        s)
+       ((and (pred integerp) n)
+        (unless (<= 0 n 255)
+          (error "not within [0, 255]: %d" n))
+        (unibyte-string n))))
+   args
+   ""))
+
 (ert-deftest msgpack-read ()
   ;; nil, false, true
   (should-not (msgpack-read-from-string (unibyte-string #xc0)))
@@ -241,20 +257,20 @@
   (should (equal (msgpack-bytes-to-hex-string (msgpack-encode t)) "c3"))
   (should (equal (msgpack-encode t) (unibyte-string #xc3)))
   (should (equal (msgpack-encode '(("compact" . t) ("schema" . 0)))
-                 (apply #'unibyte-string
-                        `(#x82 #xa7 ,@(string-to-list "compact") #xc3 #xa6 ,@(string-to-list "schema") 0))))
-  (should (equal (msgpack-encode []) (unibyte-string #x90))))
+                 (msgpack-tests-unibyte-string #x82 #xa7 "compact" #xc3 #xa6 "schema" 0)))
+  (should (equal (msgpack-encode []) (unibyte-string #x90)))
+  (should (equal (msgpack-encode (msgpack-bin-make "bin"))
+                 (msgpack-tests-unibyte-string #xc4 3 "bin"))))
 
 (ert-deftest msgpack-try-read ()
   (should (progn (msgpack-try-read-from-string "\xa5hello") t))
   (should-error (msgpack-try-read-from-string "\xa5hell") :type 'end-of-buffer)
   (should-error (msgpack-try-read-from-string
-                 (concat (unibyte-string #x82 #xa7)
-                         "compact"
-                         (unibyte-string #xc3 #xa6)
-                         "schema"
-                         ;; "\x0"
-                         ))
+                 (msgpack-tests-unibyte-string
+                  #x82                  ; map, 2 pairs
+                  #xa7 "compact"        ; str
+                  #xc3                  ; bool, t
+                  #xa6 "schema"))       ; str
                 :type 'end-of-buffer))
 
 (provide 'msgpack-tests)
