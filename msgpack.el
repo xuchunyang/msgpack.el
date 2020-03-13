@@ -411,5 +411,64 @@ in the result."
     ((pred listp) (msgpack-encode-list obj))
     ((pred vectorp) (msgpack-encode-list obj))))
 
+(defun msgpack-try-read ()
+  "Detect if there is a MessagePack object following point.
+Signal an end-of-buffer error if it ends too early.
+
+Unlike `msgpack-read', the return value is meaningless, it is
+faster than `msgpack-read' and should be used to detect if the
+MessagePack object is completed."
+  (let ((b (msgpack-read-byte)))
+    (pcase b
+      (#xc0)
+      (#xc1)
+      (#xc2)
+      (#xc3)
+      (#xcc (msgpack-read-bytes 1))
+      (#xcd (msgpack-read-bytes 2))
+      (#xce (msgpack-read-bytes 4))
+      (#xcf (msgpack-read-bytes 8))
+      (#xd0 (msgpack-read-bytes 1))
+      (#xd1 (msgpack-read-bytes 2))
+      (#xd2 (msgpack-read-bytes 4))
+      (#xd3 (msgpack-read-bytes 8))
+      (#xca (msgpack-read-bytes 4))
+      (#xcb (msgpack-read-bytes 8))
+      (#xd9 (msgpack-read-bytes (msgpack-read-byte)))
+      (#xda (msgpack-read-bytes (msgpack-bytes-to-unsigned (msgpack-read-bytes 2))))
+      (#xdb (msgpack-read-bytes (msgpack-bytes-to-unsigned (msgpack-read-bytes 4))))
+      (#xc4 (msgpack-read-bytes (msgpack-read-byte)))
+      (#xc5 (msgpack-read-bytes (msgpack-bytes-to-unsigned (msgpack-read-bytes 2))))
+      (#xc6 (msgpack-read-bytes (msgpack-bytes-to-unsigned (msgpack-read-bytes 4))))
+      (#xdc (cl-loop repeat (msgpack-bytes-to-unsigned (msgpack-read-bytes 2))
+                     do (msgpack-try-read)))
+      (#xdd (cl-loop repeat (msgpack-bytes-to-unsigned (msgpack-read-bytes 4))
+                     do (msgpack-try-read)))
+      (#xde (cl-loop repeat (msgpack-bytes-to-unsigned (msgpack-read-bytes 2))
+                     do (msgpack-try-read) (msgpack-try-read)))
+      (#xdf (cl-loop repeat (msgpack-bytes-to-unsigned (msgpack-read-bytes 4))
+                     do (msgpack-try-read) (msgpack-try-read)))
+      (#xd4 (msgpack-read-bytes 2))
+      (#xd5 (msgpack-read-bytes 3))
+      (#xd6 (msgpack-read-bytes 5))
+      (#xd7 (msgpack-read-bytes 9))
+      (#xd8 (msgpack-read-bytes 17))
+      (#xc7 (msgpack-read-bytes (1+ (msgpack-read-byte))))
+      (#xc8 (msgpack-read-bytes
+             (1+ (msgpack-bytes-to-unsigned (msgpack-read-bytes 2)))))
+      (#xc9 (msgpack-read-bytes
+             (1+ (msgpack-bytes-to-unsigned (msgpack-read-bytes 4)))))
+      (_ (pcase (msgpack-byte-to-bits b)
+           (`(0 . ,_))
+           (`(1 1 1 . ,_))
+           (`(1 0 1 . ,bits)
+            (msgpack-read-bytes (msgpack-bits-to-unsigned bits)))
+           (`(1 0 0 1 . ,bits)
+            (cl-loop repeat (msgpack-bits-to-unsigned bits)
+                     do (msgpack-try-read)))
+           (`(1 0 0 0 . ,bits)
+            (cl-loop repeat (msgpack-bits-to-unsigned bits)
+                     do (msgpack-try-read) (msgpack-try-read))))))))
+
 (provide 'msgpack)
 ;;; msgpack.el ends here

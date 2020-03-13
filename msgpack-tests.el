@@ -245,5 +245,21 @@
                         `(#x82 #xa7 ,@(string-to-list "compact") #xc3 #xa6 ,@(string-to-list "schema") 0))))
   (should (equal (msgpack-encode []) (unibyte-string #x90))))
 
+(ert-deftest msgpack-try-read ()
+  (should
+   (with-temp-buffer
+     (set-buffer-multibyte nil)
+     (insert #xa5 "hello")
+     (goto-char (point-min))
+     (msgpack-try-read)
+     t))
+  (should-error
+   (with-temp-buffer
+     (set-buffer-multibyte nil)
+     (insert #xa5 "hell")
+     (goto-char (point-min))
+     (msgpack-try-read))
+   :type 'end-of-buffer))
+
 (provide 'msgpack-tests)
 ;;; msgpack-tests.el ends here
