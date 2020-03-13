@@ -548,12 +548,13 @@ Use it if you need to write MessagePack byte array."
     ;; string, byte array
     ((pred stringp) (msgpack-encode-string obj))
     ((cl-struct msgpack-bin string) (msgpack-encode-unibyte-string string))
+    ;; NOTE cl-struct is also vector for Emacs 25, so it's important to put any cl-struct before vector
+    ;; ext
+    ((cl-struct msgpack-ext) (msgpack-encode-ext obj))
     ;; array
     ((pred vectorp) (msgpack-encode-array obj))
     ;; map
     ((pred hash-table-p) (msgpack-encode-alist (map-into obj 'list)))
-    ;; ext
-    ((cl-struct msgpack-ext) (msgpack-encode-ext obj))
     ;; encode symbols and keywords as string
     ((pred keywordp) (msgpack-encode-string (substring (symbol-name obj) 1)))
     ((pred symbolp) (msgpack-encode-string (symbol-name obj)))
