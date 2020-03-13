@@ -30,6 +30,7 @@
 (require 'json)                         ; `json-alist-p'
 (require 'cl-lib)
 (require 'seq)                          ; `seq-partition'
+(require 'map)                          ; `map-into'
 
 (defvar msgpack-false :msgpack-false
   "Value to use when reading and writing MessagePack `false'.")
@@ -413,6 +414,7 @@ Use it if you need to write MessagePack byte array."
     ((cl-struct msgpack-bin string) (msgpack-encode-unibyte-string string))
     ((pred stringp) (msgpack-encode-string obj))
     ((and (pred listp) (pred json-alist-p)) (msgpack-encode-alist obj))
+    ((pred hash-table-p) (msgpack-encode-alist (map-into obj 'list)))
     ((pred listp) (msgpack-encode-list obj))
     ((pred vectorp) (msgpack-encode-list obj))))
 
