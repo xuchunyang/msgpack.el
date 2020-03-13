@@ -25,6 +25,7 @@
 
 (require 'ert)
 (require 'msgpack)
+(require 'map)
 
 (ert-deftest msgpack-read ()
   ;; nil, false, true
@@ -90,8 +91,8 @@
   ;; map within [0, 15] pairs
   (should (equal () (msgpack-read-from-string (unibyte-string #b10000000))))
   (should (equal '((1 . 2) (3 . 4)) (msgpack-read-from-string (unibyte-string #b10000010 1 2 3 4))))
-  (should (equal'(("compact" . t) ("schema" . 0))
-                (msgpack-read-from-string (unibyte-string #x82 #xa7 ?c ?o ?m ?p ?a ?c ?t #xc3 #xa6 ?s ?c ?h ?e ?m ?a 0))))
+  (should (equal '((compact . t) (schema . 0))
+                 (msgpack-read-from-string (unibyte-string #x82 #xa7 ?c ?o ?m ?p ?a ?c ?t #xc3 #xa6 ?s ?c ?h ?e ?m ?a 0))))
   ;; map within [0, 2^16-1] pairs
   (should (equal () (msgpack-read-from-string (unibyte-string #xde 0 0))))
   (should (equal '((1 . 2) (3 . 4)) (msgpack-read-from-string (unibyte-string #xde 0 2 1 2 3 4))))
@@ -286,6 +287,18 @@
   (should (listp (msgpack-read-from-string (msgpack-encode [1 2 3]))))
   (should (let ((msgpack-array-type 'vector))
             (vectorp (msgpack-read-from-string (msgpack-encode [1 2 3]))))))
+
+(ert-deftest msgpack-read-map ()
+  (should (equal (msgpack-read-from-string (msgpack-concat #x82 #xa7 "compact" #xc3 #xa6 "schema" 0))
+                 '((compact . t) (schema . 0))))
+  (should (equal (let ((msgpack-map-type 'plist))
+                   (msgpack-read-from-string (msgpack-concat #x82 #xa7 "compact" #xc3 #xa6 "schema" 0)))
+                 '(:compact t :schema 0)))
+  (should (hash-table-p
+           (let ((msgpack-map-type 'hash-table))
+             (msgpack-read-from-string (msgpack-concat #x82 #xa7 "compact" #xc3 #xa6 "schema" 0)))))
+  (should (equal (msgpack-read-from-string (msgpack-concat #x82 1 2 3 4))
+                 '((1 . 2) (3 . 4)))))
 
 (provide 'msgpack-tests)
 ;;; msgpack-tests.el ends here

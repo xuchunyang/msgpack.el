@@ -43,6 +43,28 @@
 Must be one of `vector' or `list'.  Consider let-binding this around
 your call to `msgpack-read' instead of `setq'ing it.")
 
+(defvar msgpack-map-type 'alist
+  "Type to convert MessagePack maps to.
+Must be one of `alist', `plist', or `hash-table'.  Consider let-binding
+this around your call to `msgpack-read' instead of `setq'ing it.  Ordering
+is maintained for `alist' and `plist', but not for `hash-table'.")
+
+(defvar msgpack-key-type nil
+  "Type to convert MessagePack keys to, only for key that is string.
+If the map's key is not string, this variable is ignored.
+
+Must be one of `string', `symbol', `keyword', or nil.
+
+If nil, `msgpack-read' will guess the type based on the value of
+`msgpack-map-type':
+
+    If `msgpack-map-type' is:   nil will be interpreted as:
+      `hash-table'                `string'
+      `alist'                     `symbol'
+      `plist'                     `keyword'
+
+Consider let-binding this around your call to `msgpack-read' instead of `setq'ing it.")
+
 (defun msgpack-read-byte ()
   "Read one byte."
   (prog1 (following-char)
@@ -142,6 +164,34 @@ DATA must be a unibyte string."
                             ('vector (vconcat l))
                             ('list l))))
 
+(defun msgpack-read-map-key ()
+  "Read a MessagePack map key."
+  (pcase (msgpack-read)
+    ((and (pred stringp) s)
+     (pcase-exhaustive (or msgpack-key-type
+                           (alist-get msgpack-map-type '((hash-table . string)
+                                                            (alist . symbol)
+                                                            (plist . keyword))))
+       ('string s)
+       ('symbol (intern s))
+       ('keyword (intern (concat ":" s)))))
+    (key key)))
+
+(defun msgpack-read-map (size)
+  "Read a MessagePack map with SIZE pairs."
+  (pcase-exhaustive msgpack-map-type
+    ('alist 
+     (cl-loop repeat size
+              collect (cons (msgpack-read-map-key) (msgpack-read))))
+    ('plist
+     (cl-loop repeat size
+              nconc (list (msgpack-read-map-key) (msgpack-read))))
+    ('hash-table
+     (let ((table (make-hash-table :test 'equal)))
+       (cl-loop repeat size
+                do (puthash (msgpack-read-map-key) (msgpack-read) table))
+       table))))
+
 (defun msgpack-read ()
   "Parse and return the MessagePack object following point.
 Advances point just past MessagePack object."
@@ -177,10 +227,8 @@ Advances point just past MessagePack object."
       (#xdc (msgpack-read-array (msgpack-bytes-to-unsigned (msgpack-read-bytes 2))))
       (#xdd (msgpack-read-array (msgpack-bytes-to-unsigned (msgpack-read-bytes 4))))
       ;; map
-      (#xde (cl-loop repeat (msgpack-bytes-to-unsigned (msgpack-read-bytes 2))
-                     collect (cons (msgpack-read) (msgpack-read))))
-      (#xdf (cl-loop repeat (msgpack-bytes-to-unsigned (msgpack-read-bytes 4))
-                     collect (cons (msgpack-read) (msgpack-read))))
+      (#xde (msgpack-read-map (msgpack-bytes-to-unsigned (msgpack-read-bytes 2))))
+      (#xdf (msgpack-read-map (msgpack-bytes-to-unsigned (msgpack-read-bytes 4))))
       ;; ext
       (#xd4 (msgpack-ext-make (msgpack-read-byte) (msgpack-read-bytes 1)))
       (#xd5 (msgpack-ext-make (msgpack-read-byte) (msgpack-read-bytes 2)))
@@ -202,8 +250,7 @@ Advances point just past MessagePack object."
            ;; array
            (`(1 0 0 1 . ,bits) (msgpack-read-array (msgpack-bits-to-unsigned bits)))
            ;; map
-           (`(1 0 0 0 . ,bits) (cl-loop repeat (msgpack-bits-to-unsigned bits)
-                                        collect (cons (msgpack-read) (msgpack-read)))))))))
+           (`(1 0 0 0 . ,bits) (msgpack-read-map (msgpack-bits-to-unsigned bits))))))))
 
 (defun msgpack-read-from-string (string)
   "Read the MessagePack object in unibyte STRING and return it."
