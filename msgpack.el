@@ -103,6 +103,10 @@ Consider let-binding this around your call to `msgpack-read' instead of `setq'in
       (0 num)
       (1 (- num (expt 2 nbits))))))
 
+(defun msgpack-byte-to-signed (byte)
+  "Convert BYTE to signed int."
+  (msgpack-bytes-to-signed (unibyte-string byte)))
+
 (defun msgpack-bytes-to-bits (bytes)
   "Convert BYTES to bits."
   (cl-mapcan #'msgpack-byte-to-bits bytes))
@@ -131,14 +135,15 @@ Consider let-binding this around your call to `msgpack-read' instead of `setq'in
   "Concatenate all the arguments ARGS and make the result a unibyte string."
   (mapconcat
    (lambda (x)
-     (cl-assert x)
      (pcase-exhaustive x
        ((and (pred stringp) s)
         (cl-assert (not (multibyte-string-p s)))
         s)
        ((and (pred integerp) n)
-        (cl-assert (<= 0 n 255))
-        (unibyte-string n))))
+        (cl-assert (<= -128 n 255))
+        (cond
+         ((<= 0 n 255) (unibyte-string n))
+         ((<= -128 n 127) (msgpack-signed-to-bytes n 1))))))
    args
    ""))
 
@@ -192,6 +197,12 @@ DATA must be a unibyte string."
                 do (puthash (msgpack-read-map-key) (msgpack-read) table))
        table))))
 
+(defun msgpack-read-ext (data-len)
+  "Read ext, the data part is DATA-LEN bytes."
+  (let ((type (msgpack-byte-to-signed (msgpack-read-byte)))
+        (data (msgpack-read-bytes data-len)))
+    (msgpack-ext-make type data)))
+
 (defun msgpack-read ()
   "Parse and return the MessagePack object following point.
 Advances point just past MessagePack object."
@@ -230,17 +241,14 @@ Advances point just past MessagePack object."
       (#xde (msgpack-read-map (msgpack-bytes-to-unsigned (msgpack-read-bytes 2))))
       (#xdf (msgpack-read-map (msgpack-bytes-to-unsigned (msgpack-read-bytes 4))))
       ;; ext
-      (#xd4 (msgpack-ext-make (msgpack-read-byte) (msgpack-read-bytes 1)))
-      (#xd5 (msgpack-ext-make (msgpack-read-byte) (msgpack-read-bytes 2)))
-      (#xd6 (msgpack-ext-make (msgpack-read-byte) (msgpack-read-bytes 4)))
-      (#xd7 (msgpack-ext-make (msgpack-read-byte) (msgpack-read-bytes 8)))
-      (#xd8 (msgpack-ext-make (msgpack-read-byte) (msgpack-read-bytes 16)))
-      (#xc7 (let ((len (msgpack-read-byte)))
-              (msgpack-ext-make (msgpack-read-byte) (msgpack-read-bytes len))))
-      (#xc8 (let ((len (msgpack-bytes-to-unsigned (msgpack-read-bytes 2))))
-              (msgpack-ext-make (msgpack-read-byte) (msgpack-read-bytes len))))
-      (#xc9 (let ((len (msgpack-bytes-to-unsigned (msgpack-read-bytes 4))))
-              (msgpack-ext-make (msgpack-read-byte) (msgpack-read-bytes len))))
+      (#xd4 (msgpack-read-ext 1))
+      (#xd5 (msgpack-read-ext 2))
+      (#xd6 (msgpack-read-ext 4))
+      (#xd7 (msgpack-read-ext 8))
+      (#xd8 (msgpack-read-ext 16))
+      (#xc7 (msgpack-read-ext (msgpack-read-byte)))
+      (#xc8 (msgpack-read-ext (msgpack-bytes-to-unsigned (msgpack-read-bytes 2))))
+      (#xc9 (msgpack-read-ext (msgpack-bytes-to-unsigned (msgpack-read-bytes 4))))
       (_ (pcase (msgpack-byte-to-bits b)
            (`(0 . ,_) b)
            ;; negative fixint
@@ -539,7 +547,7 @@ Use it if you need to write MessagePack byte array."
            (concat (unibyte-string #xc8) (msgpack-unsigned-to-bytes len 2)))
           ((guard (<= len #xffffffff))
            (concat (unibyte-string #xc9) (msgpack-unsigned-to-bytes len 4))))
-        (unibyte-string type)
+        (msgpack-signed-to-bytes type 1)
         data)))))
 
 (defun msgpack-encode (obj)

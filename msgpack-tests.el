@@ -159,6 +159,11 @@
   (should (equal (msgpack-signed-to-bytes 0 1) (unibyte-string 0)))
   (should (equal (msgpack-signed-to-bytes 127 1) (unibyte-string #x7f))))
 
+(ert-deftest msgpack-byte-to-signed ()
+  (should (= (msgpack-byte-to-signed #x80) -128))
+  (should (= (msgpack-byte-to-signed #xff) -1))
+  (should (= (msgpack-byte-to-signed #x7f) 127)))
+
 (ert-deftest msgpack-encode-integer ()
   ;; [0, 127]
   (cl-loop for i from 0 to 127
@@ -251,7 +256,9 @@
   (should (equal (msgpack-encode-ext (msgpack-ext-make 42 "ABCD"))
                  (msgpack-concat #xd6 42 "ABCD")))
   (should (equal (msgpack-encode-ext (msgpack-ext-make 42 "ABC"))
-                 (msgpack-concat #xc7 3 42 "ABC"))))
+                 (msgpack-concat #xc7 3 42 "ABC")))
+  (should (equal (msgpack-encode-ext (msgpack-ext-make -42 "ABC"))
+                 (msgpack-concat #xc7 3 -42 "ABC"))))
 
 (ert-deftest msgpack-encode ()
   (should (equal (msgpack-bytes-to-hex-string (msgpack-encode nil)) "c0"))
