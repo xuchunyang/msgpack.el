@@ -197,11 +197,34 @@ DATA must be a unibyte string."
                 do (puthash (msgpack-read-map-key) (msgpack-read) table))
        table))))
 
+(defun msgpack-seconds-to-time (seconds nanoseconds)
+  "Convert SECONDS and NANOSECONDS to Emacs time.
+Return (SEC-HIGH SEC-LOW MICROSEC PICOSEC),
+using the formula: HIGH * 2**16 + LOW + MICRO * 10**-6 + PICO * 10**-12."
+  (let (high low micro pico)
+    (setq low (% seconds (expt 2 16))
+          high (/ seconds (expt 2 16)))
+    ;; microsecond 1e-6
+    ;; nanosecond 1e-9
+    ;; picosecond 1e-12
+    (setq micro (/ nanoseconds 1000)
+          pico (* 1000 (% nanoseconds 1000)))
+    (list high low micro pico)))
+
 (defun msgpack-read-ext (data-len)
   "Read ext, the data part is DATA-LEN bytes."
   (let ((type (msgpack-byte-to-signed (msgpack-read-byte)))
         (data (msgpack-read-bytes data-len)))
-    (msgpack-ext-make type data)))
+    (pcase (list type data-len)
+      ('(-1 4) (seconds-to-time (msgpack-bytes-to-unsigned data)))
+      ('(-1 8) (let* ((bits (msgpack-bytes-to-bits data))
+                      (nanoseconds (msgpack-bits-to-unsigned (cl-subseq bits 0 30)))
+                      (seconds (msgpack-bits-to-unsigned (cl-subseq bits 30))))
+                 (msgpack-seconds-to-time seconds nanoseconds)))
+      ('(-1 12) (let ((nanoseconds (msgpack-bytes-to-unsigned (substring data 0 4)))
+                      (seconds (msgpack-bytes-to-unsigned (substring data 4))))
+                  (msgpack-seconds-to-time seconds nanoseconds)))
+      (_ (msgpack-ext-make type data)))))
 
 (defun msgpack-read ()
   "Parse and return the MessagePack object following point.
@@ -420,7 +443,7 @@ Advances point just past MessagePack object."
 (defun msgpack-bits-to-bytes (bits)
   "Convert BITS to bytes."
   ;; (cl-assert (zerop (% (length bits) 8)))
-  (cl-loop for i from 0 to (1- 32) by 8
+  (cl-loop for i from 0 to (1- (length bits)) by 8
            concat (unibyte-string (msgpack-8bits-to-byte (cl-subseq bits i (+ i 8))))))
 
 ;; Emacs float uses IEEE 64-bit but we can't asscess it from Emacs Lisp

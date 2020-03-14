@@ -315,5 +315,37 @@
           (should (equal x (msgpack-read-file tmpfile)))
         (delete-file tmpfile)))))
 
+(ert-deftest msgpack-read-timestamp ()
+  (should (= 1584211079
+             (time-to-seconds
+              (msgpack-read-from-string
+               (unibyte-string #xd6 #xff #x5E #x6D #x24 #x87)))))
+
+  ;; $ gdate +%s:%N
+  ;; 1584216254:357957000
+  (let ((seconds 1584216254)
+        (nanoseconds 357957000))
+    (pcase-exhaustive (msgpack-read-from-string
+                       (msgpack-concat
+                        #xd7 -1
+                        (msgpack-bits-to-bytes
+                         (nconc
+                          (msgpack-list-pad-left (msgpack-unsigned-to-bits nanoseconds) 30 0)
+                          (msgpack-list-pad-left (msgpack-unsigned-to-bits seconds) 34 0)))))
+      (`(,high ,low ,micro ,pico)
+       (should (= seconds (+ (* high (expt 2 16)) low)))
+       (should (= nanoseconds (+ (* 1000 micro) pico))))))
+
+  (let ((seconds 1584216254)
+        (nanoseconds 357957000))
+    (pcase-exhaustive (msgpack-read-from-string
+                       (msgpack-concat
+                        #xc7 12 -1
+                        (msgpack-unsigned-to-bytes nanoseconds 4)
+                        (msgpack-unsigned-to-bytes seconds 8)))
+      (`(,high ,low ,micro ,pico)
+       (should (= seconds (+ (* high (expt 2 16)) low)))
+       (should (= nanoseconds (+ (* 1000 micro) pico)))))))
+
 (provide 'msgpack-tests)
 ;;; msgpack-tests.el ends here
