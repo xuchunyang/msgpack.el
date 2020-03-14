@@ -300,5 +300,13 @@
   (should (equal (msgpack-read-from-string (msgpack-concat #x82 1 2 3 4))
                  '((1 . 2) (3 . 4)))))
 
+(ert-deftest msgpack-read-file ()
+  (let ((x '("hello" 42 "Unicode test 中文")))
+    (let ((tmpfile (make-temp-file "msgpack-tests-")))
+      (write-region (msgpack-encode x) nil tmpfile)
+      (unwind-protect
+          (should (equal x (msgpack-read-file tmpfile)))
+        (delete-file tmpfile)))))
+
 (provide 'msgpack-tests)
 ;;; msgpack-tests.el ends here

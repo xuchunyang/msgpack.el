@@ -261,6 +261,14 @@ Advances point just past MessagePack object."
     (goto-char (point-min))
     (msgpack-read)))
 
+(defun msgpack-read-file (file)
+  "Read the first MessagePack object contained in FILE and return it."
+  (with-temp-buffer
+    (set-buffer-multibyte nil)
+    (insert-file-contents-literally file)
+    (goto-char (point-min))
+    (msgpack-read)))
+
 (defun msgpack-unsigned-to-bytes (integer size)
   "Convert unsigned INTEGER to SIZE bytes."
   (apply
