@@ -180,7 +180,7 @@ DATA must be a unibyte string."
 (defun msgpack-read-map (size)
   "Read a MessagePack map with SIZE pairs."
   (pcase-exhaustive msgpack-map-type
-    ('alist 
+    ('alist
      (cl-loop repeat size
               collect (cons (msgpack-read-map-key) (msgpack-read))))
     ('plist
@@ -563,7 +563,7 @@ Use it if you need to write MessagePack byte array."
 
 (defun msgpack-try-read ()
   "Detect if there is a MessagePack object following point.
-Signal an end-of-buffer error if it ends too early.
+Signal an `end-of-buffer' error if it ends too early.
 
 Unlike `msgpack-read', the return value is meaningless, it is
 faster than `msgpack-read' and should be used to detect if the
@@ -621,7 +621,7 @@ MessagePack object is completed."
                      do (msgpack-try-read) (msgpack-try-read))))))))
 
 (defun msgpack-try-read-from-string (string)
-  "Signal end-of-buffer if STRING is not a MessagePack object."
+  "Signal `end-of-buffer' if STRING is not a MessagePack object."
   (cl-assert (not (multibyte-string-p string)))
   (with-temp-buffer
     (set-buffer-multibyte nil)
