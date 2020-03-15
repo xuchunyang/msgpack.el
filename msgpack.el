@@ -323,7 +323,7 @@ calling this function, e.g., (set-buffer-multibyte nil)."
 Usually this is 62, for 32-bit Emacs, it might be 30.")
 
 (defun msgpack-bits-plus-one (bits)
-  "Add BITS by 1, assuming BITS contains at least one zero."
+  "Add BITS by 1, assuming BITS contain at least one zero."
   (let (done result)
     (dolist (b (nreverse bits) result)
       (cond
