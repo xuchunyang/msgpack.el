@@ -452,6 +452,7 @@ Usually this is 62, for 32-bit Emacs, it might be 30.")
     (nreverse bits)))
 
 (defun msgpack-float-to-bits-normalize (ibits fbits)
+  "Normalize IBITS and FBITS and return a list of bits."
   (let* ((index (length ibits))
          (bits (append ibits fbits))
          (e (1- (- (length ibits) (cl-position 1 bits)))))
