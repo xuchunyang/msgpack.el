@@ -1,4 +1,4 @@
-;;; msgpack.el --- MessagePack Library               -*- lexical-binding: t; -*-
+;;; msgpack.el --- Read and write MessagePack object    -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2020  Xu Chunyang
 
