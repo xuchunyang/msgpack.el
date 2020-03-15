@@ -188,16 +188,11 @@
   ;; [-2^31, 2^31-1]
   (should (equal (msgpack-encode-integer (- (expt 2 31))) (unibyte-string #xd2 #x80 #x00 #x00 #x00)))
   ;; [-2^63, 2^63-1]
-  ;; XXX this test fails
-  ;; -> msgpack-signed-to-byte
-  ;;    -> msgpack-unsigned-to-bytes
-  ;;       -> Emacs int bits is less than 64
-  ;; (should (equal (msgpack-encode-integer (1- (- (expt 2 31))))
-  ;;                (unibyte-string #xd3 #xff #xff #xff #xff #x7f #xff #xff #xff)))
-  ;; (unless (zerop (expt 2 63))           ; need Emacs 27.1's bignum
-  ;;   (should (equal (msgpack-encode-integer (- (expt 2 63)))
-  ;;                  (unibyte-string #xd3 #x80 #x00 #x00 #x00 #x00 #x00 #x00 #x00))))
-  )
+  (should (equal (msgpack-encode-integer (1- (- (expt 2 31))))
+                 (unibyte-string #xd3 #xff #xff #xff #xff #x7f #xff #xff #xff)))
+  (unless (zerop (expt 2 63))           ; need Emacs 27.1's bignum
+    (should (equal (msgpack-encode-integer (- (expt 2 63)))
+                   (unibyte-string #xd3 #x80 #x00 #x00 #x00 #x00 #x00 #x00 #x00)))))
 
 (ert-deftest msgpack-encode-string ()
   ;; string within [0, 31] bytes
@@ -346,6 +341,19 @@
       (`(,high ,low ,micro ,pico)
        (should (= seconds (+ (* high (expt 2 16)) low)))
        (should (= nanoseconds (+ (* 1000 micro) pico)))))))
+
+(ert-deftest msgpack-bits-plus-one ()
+  (should (equal (msgpack-bits-plus-one '(1 0 0 0 1 0)) '(1 0 0 0 1 1)))
+  (should (equal (msgpack-bits-plus-one '(1 0 0 0 1 1)) '(1 0 0 1 0 0)))
+  (should (equal (msgpack-bits-plus-one '(1 0 0 1 1 1)) '(1 0 1 0 0 0)))
+  (should (equal (msgpack-bits-plus-one '(1 1 1 1 1 1)) '(0 0 0 0 0 0))))
+
+(ert-deftest msgpack-signed-to-bytes-fallback ()
+  (should (equal (msgpack-signed-to-bytes-fallback -1 1) (unibyte-string #xff)))
+  (should (equal (msgpack-signed-to-bytes-fallback -1 4) (unibyte-string #xff #xff #xff #xff)))
+  (should (equal (msgpack-signed-to-bytes-fallback -1 8) (unibyte-string #xff #xff #xff #xff #xff #xff #xff #xff)))
+  (should (equal (msgpack-signed-to-bytes-fallback -30 4) (unibyte-string #xff #xff #xff #xe2)))
+  (should (equal (msgpack-signed-to-bytes-fallback -30 8) (unibyte-string #xff #xff #xff #xff #xff #xff #xff #xe2))))
 
 (provide 'msgpack-tests)
 ;;; msgpack-tests.el ends here

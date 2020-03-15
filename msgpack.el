@@ -315,11 +315,40 @@ calling this function, e.g., (set-buffer-multibyte nil)."
              for i from 0 by 8
              collect (logand #xff (lsh integer (- i)))))))
 
+(defvar msgpack-emacs-integer-length
+  (cl-loop for i from 1
+           when (zerop (lsh most-negative-fixnum (- i)))
+           return i)
+  "The number of bits this Emacs's integer is in.
+Usually this is 62, for 32-bit Emacs, it might be 30.")
+
+(defun msgpack-bits-plus-one (bits)
+  "Add BITS by 1, assuming BITS contains at least one zero."
+  (let (done result)
+    (dolist (b (nreverse bits) result)
+      (cond
+       (done (push b result))
+       ((and (not done) (zerop b))
+        (push 1 result)
+        (setq done t))
+       (t (push 0 result))))))
+
+(defun msgpack-signed-to-bytes-fallback (integer size)
+  "Convert negative INTEGER to SIZE bytes."
+  (let* ((bits (msgpack-unsigned-to-bits (- integer)))
+         (bits (msgpack-list-pad-left bits (* size 8) 0))
+         (bits (cl-loop for b in bits
+                        collect (if (zerop b) 1 0)))
+         (bits (msgpack-bits-plus-one bits)))
+    (msgpack-bits-to-bytes bits)))
+
 (defun msgpack-signed-to-bytes (integer size)
   "Convert signed INTEGER to SIZE bytes."
-  (if (>= integer 0)
-      (msgpack-unsigned-to-bytes integer size)
-    (msgpack-unsigned-to-bytes (lognot (1- (- integer))) size)))
+  (if (and (< integer 0)
+           (> (* 8 size) msgpack-emacs-integer-length))
+      ;; Emacs can't help
+      (msgpack-signed-to-bytes-fallback integer size)
+    (msgpack-unsigned-to-bytes integer size)))
 
 (defun msgpack-encode-integer (n)
   "Return a MessagePack representation of integer N."
