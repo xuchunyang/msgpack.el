@@ -323,34 +323,35 @@ calling this function, e.g., (set-buffer-multibyte nil)."
 
 (defun msgpack-encode-integer (n)
   "Return a MessagePack representation of integer N."
-  (pcase n
-    ((guard (<= 0 n 127))
-     (unibyte-string n))
-    ((guard (<= -32 n -1))
-     (unibyte-string (logior #b11100000 (+ 32 n))))
-    ((guard (<= 0 n 255))
-     (unibyte-string #xcc n))
-    ((guard (<= 0 n #xffff))
-     (concat (unibyte-string #xcd) (msgpack-unsigned-to-bytes n 2)))
-    ;; NOTE #xffffffff or 2^32 overflow for 32-bit platform
-    ((guard (<= 0 n #xffffffff))
-     (concat (unibyte-string #xce) (msgpack-unsigned-to-bytes n 4)))
-    ((or (guard (and (> (expt 2 64) 0)  ; need Emacs 27.1's bignum
-                     (<= 0 n (1- (expt 2 64)))))
-         (guard (<= 0 n (max (1- (expt 2 64)) most-positive-fixnum))))
-     (concat (unibyte-string #xcf) (msgpack-unsigned-to-bytes n 8)))
-    ((guard (<= -128 n 127))
-     (concat (unibyte-string #xd0) (msgpack-signed-to-bytes n 1)))
-    ((guard (<= (- (expt 2 15)) n (1- (expt 2 15))))
-     (concat (unibyte-string #xd1) (msgpack-signed-to-bytes n 2)))
-    ((guard (<= (- (expt 2 31)) n (1- (expt 2 31))))
-     (concat (unibyte-string #xd2) (msgpack-signed-to-bytes n 4)))
-    ((guard (or (and (> (expt 2 63) 0)  ; need Emacs 27.1's bignum
-                     (<= (- (expt 2 63)) n (1- (expt 2 63))))
-                (<= (min most-negative-fixnum (- (expt 2 63)))
-                    n
-                    (max most-positive-fixnum (1- (expt 2 63))))))
-     (concat (unibyte-string #xd3) (msgpack-signed-to-bytes n 8)))))
+  (cond
+   ((<= 0 n 127)
+    (unibyte-string n))
+   ((<= -32 n -1)
+    (unibyte-string (logior #b11100000 (+ 32 n))))
+   ((<= 0 n 255)
+    (unibyte-string #xcc n))
+   ((<= 0 n #xffff)
+    (concat (unibyte-string #xcd) (msgpack-unsigned-to-bytes n 2)))
+   ;; NOTE #xffffffff or 2^32 overflow for 32-bit platform
+   ((<= 0 n #xffffffff)
+    (concat (unibyte-string #xce) (msgpack-unsigned-to-bytes n 4)))
+   ((or (and (> (expt 2 64) 0)          ; need Emacs 27.1's bignum
+             (<= 0 n (1- (expt 2 64))))
+        (<= 0 n (max (1- (expt 2 64)) most-positive-fixnum)))
+    (concat (unibyte-string #xcf) (msgpack-unsigned-to-bytes n 8)))
+   ((<= -128 n 127)
+    (concat (unibyte-string #xd0) (msgpack-signed-to-bytes n 1)))
+   ((<= (- (expt 2 15)) n (1- (expt 2 15)))
+    (concat (unibyte-string #xd1) (msgpack-signed-to-bytes n 2)))
+   ((<= (- (expt 2 31)) n (1- (expt 2 31)))
+    (concat (unibyte-string #xd2) (msgpack-signed-to-bytes n 4)))
+   ((or (and (> (expt 2 63) 0)          ; need Emacs 27.1's bignum
+             (<= (- (expt 2 63)) n (1- (expt 2 63))))
+        (<= (min most-negative-fixnum (- (expt 2 63)))
+            n
+            (max most-positive-fixnum (1- (expt 2 63)))))
+    (concat (unibyte-string #xd3) (msgpack-signed-to-bytes n 8)))
+   (t (error "Should be impossible to reach here: %s" n))))
 
 (defun msgpack-encode-string (string)
   "Return a MessagePack representation of UTF-8 STRING."
