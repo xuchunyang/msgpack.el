@@ -228,12 +228,12 @@ using the formula: HIGH * 2**16 + LOW + MICRO * 10**-6 + PICO * 10**-12."
 
 (defun msgpack-read ()
   "Parse and return the MessagePack object following point.
-Advances point just past MessagePack object."
-  ;; MessagePack is raw bytes, so the current buffer should be a single-byte
-  ;; buffer, if the current buffer is a multibyte buffer and contains multibyte
-  ;; characters, `msgpack-read' won't work correctly, maybe an error should be
-  ;; signaled when encountering a multibyte character?
-  ;;
+Advances point just past MessagePack object.
+
+NOTE MessagePack is raw bytes, hence current buffer should be a
+single-byte buffer, but Emacs buffers are multibyte buffers by
+default, you should make this buffer single-byte buffer before
+calling this function, e.g., (set-buffer-multibyte nil)."
   ;; (cl-assert (not enable-multibyte-characters))
   (let ((b (msgpack-read-byte)))
     (pcase b
