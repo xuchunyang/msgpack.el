@@ -175,8 +175,8 @@ DATA must be a unibyte string."
     ((and (pred stringp) s)
      (pcase-exhaustive (or msgpack-key-type
                            (alist-get msgpack-map-type '((hash-table . string)
-                                                            (alist . symbol)
-                                                            (plist . keyword))))
+                                                         (alist . symbol)
+                                                         (plist . keyword))))
        ('string s)
        ('symbol (intern s))
        ('keyword (intern (concat ":" s)))))
