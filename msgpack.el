@@ -483,7 +483,7 @@ Usually this is 62, for 32-bit Emacs, it might be 30.")
   (cl-loop for i from 0 to (1- (length bits)) by 8
            concat (unibyte-string (msgpack-8bits-to-byte (cl-subseq bits i (+ i 8))))))
 
-;; Emacs float uses IEEE 64-bit but we can't asscess it from Emacs Lisp
+;; Emacs float uses IEEE 64-bit but we can't access it from Emacs Lisp
 ;; XXX File a feature request
 (defun msgpack-float-to-bytes (f)
   "Convert float F to IEEE 32-bit."
