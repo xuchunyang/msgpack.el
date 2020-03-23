@@ -1,4 +1,5 @@
 # MessagePack Emacs Lisp library
+[![Melpa](https://melpa.org/packages/msgpack-badge.svg)](https://melpa.org/#/msgpack)
 
 msgpack.el is an Emacs Lisp library for reading and writing [MessagePack](https://msgpack.org/).
 
