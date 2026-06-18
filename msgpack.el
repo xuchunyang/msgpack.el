@@ -121,41 +121,59 @@ Must be either `string' for the historical raw unibyte string behavior or
            for n across (nreverse bytes)
            sum (* n (expt (expt 2 8) i))))
 
+(defun msgpack--bytes-negative-p (bytes)
+  "Return non-nil if BYTES encode a negative two's-complement integer."
+  (not (zerop (logand (aref bytes 0) #x80))))
+
+(defun msgpack--bytes-invert (bytes)
+  "Return BYTES with every bit inverted."
+  (apply #'unibyte-string
+         (cl-loop for byte across bytes collect (logxor byte #xff))))
+
 (defun msgpack-bytes-to-signed (bytes)
   "Convert BYTES to signed int."
-  (let ((nbits (* 8 (length bytes)))
-        (num (msgpack-bytes-to-unsigned bytes)))
-    (pcase (ash num (- (1- nbits)))     ; sign
-      (0 num)
-      (1 (- num (expt 2 nbits))))))
+  (if (msgpack--bytes-negative-p bytes)
+      (- (1+ (msgpack-bytes-to-unsigned (msgpack--bytes-invert bytes))))
+    (msgpack-bytes-to-unsigned bytes)))
 
 (defun msgpack-byte-to-signed (byte)
   "Convert BYTE to signed int."
-  (msgpack-bytes-to-signed (unibyte-string byte)))
+  (if (< byte 128) byte (- byte 256)))
 
 (defun msgpack-bytes-to-bits (bytes)
   "Convert BYTES to bits."
   (cl-mapcan #'msgpack-byte-to-bits bytes))
 
+(defun msgpack--bytes-to-ieee-float (bytes exponent-bits fraction-bits bias)
+  "Convert IEEE 754 BYTES to a floating-point number.
+EXPONENT-BITS, FRACTION-BITS, and BIAS describe the float format."
+  (let* ((bits (msgpack-bytes-to-bits bytes))
+         (sign (if (zerop (car bits)) 1.0 -1.0))
+         (exponent-end (1+ exponent-bits))
+         (exponent (msgpack-bits-to-unsigned (cl-subseq bits 1 exponent-end)))
+         (max-exponent (1- (expt 2 exponent-bits)))
+         (fraction (msgpack-bits-to-unsigned (cl-subseq bits exponent-end))))
+    (cond
+     ((= exponent max-exponent)
+      (if (zerop fraction)
+          (* sign (/ 1.0 0.0))
+        (/ 0.0 0.0)))
+     ((zerop exponent)
+      (if (zerop fraction)
+          (* sign 0.0)
+        (* sign fraction (expt 2.0 (- 1 bias fraction-bits)))))
+     (t
+      (* sign
+         (+ 1.0 (/ (float fraction) (expt 2.0 fraction-bits)))
+         (expt 2.0 (- exponent bias)))))))
+
 (defun msgpack-bytes-to-float (bytes)
   "Convert BYTES to IEEE 754 float."
-  (let* ((bits (msgpack-bytes-to-bits bytes))
-         (sign (car bits))
-         (e (msgpack-bits-to-unsigned (cl-subseq bits 1 9)))
-         (fraction (1+ (cl-loop for b in (cl-subseq bits 9)
-                                for i from 1 to 23
-                                sum (* b (expt 2 (- i)))))))
-    (* (expt -1 sign) (expt 2 (- e 127)) fraction)))
+  (msgpack--bytes-to-ieee-float bytes 8 23 127))
 
 (defun msgpack-bytes-to-double (bytes)
   "Convert BYTES to IEEE 754 double."
-  (let* ((bits (msgpack-bytes-to-bits bytes))
-         (sign (car bits))
-         (e (msgpack-bits-to-unsigned (cl-subseq bits 1 12)))
-         (fraction (1+ (cl-loop for b in (cl-subseq bits 12)
-                                for i from 1 to 52
-                                sum (* b (expt 2 (- i)))))))
-    (* (expt -1 sign) (expt 2 (- e 1023)) fraction)))
+  (msgpack--bytes-to-ieee-float bytes 11 52 1023))
 
 (defun msgpack-concat (&rest args)
   "Concatenate all the arguments ARGS and make the result a unibyte string."
@@ -255,7 +273,7 @@ using the formula: HIGH * 2**16 + LOW + MICRO * 10**-6 + PICO * 10**-12."
                       (seconds (msgpack-bits-to-unsigned (cl-subseq bits 30))))
                  (msgpack-seconds-to-time seconds nanoseconds)))
       ('(-1 12) (let ((nanoseconds (msgpack-bytes-to-unsigned (substring data 0 4)))
-                      (seconds (msgpack-bytes-to-unsigned (substring data 4))))
+                      (seconds (msgpack-bytes-to-signed (substring data 4))))
                   (msgpack-seconds-to-time seconds nanoseconds)))
       (_ (msgpack-ext-make type data)))))
 

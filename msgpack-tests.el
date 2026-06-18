@@ -63,8 +63,18 @@
                (msgpack-read-from-string (unibyte-string #xd3 #x80 #x00 #x00 #x00 #x00 #x00 #x00 #x00)))))
   ;; float
   (should (= 0.15625 (msgpack-read-from-string (unibyte-string #xca #x3e #x20 #x00 #x00))))
+  (should (= (/ 1.0 0.0) (/ 1.0 (msgpack-read-from-string (unibyte-string #xca 0 0 0 0)))))
+  (should (= (/ -1.0 0.0) (/ 1.0 (msgpack-read-from-string (unibyte-string #xca #x80 0 0 0)))))
+  (should (= (/ 1.0 0.0) (msgpack-read-from-string (unibyte-string #xca #x7f #x80 0 0))))
+  (should (= (/ -1.0 0.0) (msgpack-read-from-string (unibyte-string #xca #xff #x80 0 0))))
+  (should (isnan (msgpack-read-from-string (unibyte-string #xca #x7f #xc0 0 0))))
   ;; double
   (should (= 0.15625 (msgpack-read-from-string (unibyte-string #xcb #x3f #xc4 #x00 #x00 #x00 #x00 #x00 #x00))))
+  (should (= (/ 1.0 0.0) (/ 1.0 (msgpack-read-from-string (unibyte-string #xcb 0 0 0 0 0 0 0 0)))))
+  (should (= (/ -1.0 0.0) (/ 1.0 (msgpack-read-from-string (unibyte-string #xcb #x80 0 0 0 0 0 0 0)))))
+  (should (= (/ 1.0 0.0) (msgpack-read-from-string (unibyte-string #xcb #x7f #xf0 0 0 0 0 0 0))))
+  (should (= (/ -1.0 0.0) (msgpack-read-from-string (unibyte-string #xcb #xff #xf0 0 0 0 0 0 0))))
+  (should (isnan (msgpack-read-from-string (unibyte-string #xcb #x7f #xf8 0 0 0 0 0 0))))
   ;; string within [0, 31] bytes
   (should (equal "" (msgpack-read-from-string (unibyte-string #b10100000))))
   (should (equal "hello" (msgpack-read-from-string (unibyte-string #b10100101 ?h ?e ?l ?l ?o))))
@@ -162,7 +172,9 @@
 (ert-deftest msgpack-byte-to-signed ()
   (should (= (msgpack-byte-to-signed #x80) -128))
   (should (= (msgpack-byte-to-signed #xff) -1))
-  (should (= (msgpack-byte-to-signed #x7f) 127)))
+  (should (= (msgpack-byte-to-signed #x7f) 127))
+  (should (= (msgpack-bytes-to-signed (unibyte-string #xff #xff #xff #xff #xff #xff #xff #xff))
+             -1)))
 
 (ert-deftest msgpack-encode-integer ()
   ;; [0, 127]
@@ -380,6 +392,17 @@
                         #xc7 12 -1
                         (msgpack-unsigned-to-bytes nanoseconds 4)
                         (msgpack-unsigned-to-bytes seconds 8)))
+      (`(,high ,low ,micro ,pico)
+       (should (= seconds (+ (* high (expt 2 16)) low)))
+       (should (= nanoseconds (+ (* 1000 micro) pico))))))
+
+  (let ((seconds -1)
+        (nanoseconds 42000))
+    (pcase-exhaustive (msgpack-read-from-string
+                       (msgpack-concat
+                        #xc7 12 -1
+                        (msgpack-unsigned-to-bytes nanoseconds 4)
+                        (msgpack-signed-to-bytes seconds 8)))
       (`(,high ,low ,micro ,pico)
        (should (= seconds (+ (* high (expt 2 16)) low)))
        (should (= nanoseconds (+ (* 1000 micro) pico)))))))
