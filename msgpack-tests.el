@@ -305,12 +305,49 @@
   (should (equal (msgpack-read-from-string (msgpack-concat #x82 1 2 3 4))
                  '((1 . 2) (3 . 4)))))
 
+(ert-deftest msgpack-decode-keyword-options ()
+  (should-not (msgpack-decode (unibyte-string #xc2)))
+  (should (eq :false (msgpack-decode (unibyte-string #xc2) :false-value :false)))
+  (should (eq :null (msgpack-decode (unibyte-string #xc0) :null-value :null)))
+  (should (equal [:false]
+                 (msgpack-decode (unibyte-string #x91 #xc2)
+                                 :array-type 'vector
+                                 :false-value :false)))
+  (should (equal '((:k . :null))
+                 (msgpack-decode (msgpack-concat #x81 #xa1 "k" #xc0)
+                                 :key-type 'keyword
+                                 :null-value :null)))
+  (should (equal '("compact" . t)
+                 (car (msgpack-decode (msgpack-encode '((compact . t)))
+                                      :key-type 'string))))
+  (should (equal '(:compact t)
+                 (msgpack-decode (msgpack-encode '((compact . t)))
+                                 :map-type 'plist)))
+  (should (equal ["x"]
+                 (msgpack-read-from-string (msgpack-encode '(:x))
+                                           :array-type 'vector))))
+
+(ert-deftest msgpack-bin-type ()
+  (let ((encoded (msgpack-concat #xc4 3 "bin")))
+    (should (equal "bin" (msgpack-decode encoded)))
+    (let ((decoded (msgpack-decode encoded :bin-type 'msgpack-bin)))
+      (should (msgpack-bin-p decoded))
+      (should (equal "bin" (msgpack-bin-string decoded)))))
+  (let ((decoded (msgpack-decode (msgpack-concat #x91 #xc4 3 "bin")
+                                 :array-type 'vector
+                                 :bin-type 'msgpack-bin)))
+    (should (vectorp decoded))
+    (should (msgpack-bin-p (aref decoded 0)))
+    (should (equal "bin" (msgpack-bin-string (aref decoded 0))))))
+
 (ert-deftest msgpack-read-file ()
   (let ((x '("hello" 42 "Unicode test 中文")))
     (let ((tmpfile (make-temp-file "msgpack-tests-")))
       (write-region (msgpack-encode x) nil tmpfile)
       (unwind-protect
-          (should (equal x (msgpack-read-file tmpfile)))
+          (progn
+            (should (equal x (msgpack-read-file tmpfile)))
+            (should (equal (vconcat x) (msgpack-decode-file tmpfile :array-type 'vector))))
         (delete-file tmpfile)))))
 
 (ert-deftest msgpack-read-timestamp ()
