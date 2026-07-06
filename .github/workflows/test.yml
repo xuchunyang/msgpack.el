@@ -18,8 +18,28 @@ jobs:
       with:
         version: ${{ matrix.emacs_version }}
 
-    - uses: actions/checkout@v1
+    - uses: actions/checkout@v4
     - name: Byte compile
       run: 'emacs -Q --batch --eval "(setq byte-compile-error-on-warn t)" -f batch-byte-compile msgpack.el'
     - name: Run tests
       run: 'emacs -Q --batch -L . -l msgpack-tests -f ert-run-tests-batch-and-exit'
+
+  conformance:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: purcell/setup-emacs@master
+      with:
+        version: 29.4
+
+    - uses: actions/checkout@v4
+    - name: Download conformance suite
+      run: |
+        curl -fsSL \
+          https://raw.githubusercontent.com/kawanet/msgpack-test-suite/e04f6edeaae589c768d6b70fcce80aa786b7800e/dist/msgpack-test-suite.json \
+          -o msgpack-test-suite.json
+    - name: Run conformance tests
+      run: |
+        emacs -Q --batch -L . \
+          --eval "(setq msgpack-test-suite-file \"$(pwd)/msgpack-test-suite.json\")" \
+          -l msgpack-tests \
+          --eval "(ert-run-tests-batch-and-exit \"^msgpack-external-conformance-suite$\")"

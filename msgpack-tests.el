@@ -26,6 +26,10 @@
 (require 'ert)
 (require 'msgpack)
 (require 'map)
+(require 'json)
+
+(defvar msgpack-test-suite-file nil
+  "Path to kawanet/msgpack-test-suite JSON file, or nil to skip it.")
 
 (ert-deftest msgpack-read ()
   ;; nil, false, true
@@ -63,8 +67,18 @@
                (msgpack-read-from-string (unibyte-string #xd3 #x80 #x00 #x00 #x00 #x00 #x00 #x00 #x00)))))
   ;; float
   (should (= 0.15625 (msgpack-read-from-string (unibyte-string #xca #x3e #x20 #x00 #x00))))
+  (should (= (/ 1.0 0.0) (/ 1.0 (msgpack-read-from-string (unibyte-string #xca 0 0 0 0)))))
+  (should (= (/ -1.0 0.0) (/ 1.0 (msgpack-read-from-string (unibyte-string #xca #x80 0 0 0)))))
+  (should (= (/ 1.0 0.0) (msgpack-read-from-string (unibyte-string #xca #x7f #x80 0 0))))
+  (should (= (/ -1.0 0.0) (msgpack-read-from-string (unibyte-string #xca #xff #x80 0 0))))
+  (should (isnan (msgpack-read-from-string (unibyte-string #xca #x7f #xc0 0 0))))
   ;; double
   (should (= 0.15625 (msgpack-read-from-string (unibyte-string #xcb #x3f #xc4 #x00 #x00 #x00 #x00 #x00 #x00))))
+  (should (= (/ 1.0 0.0) (/ 1.0 (msgpack-read-from-string (unibyte-string #xcb 0 0 0 0 0 0 0 0)))))
+  (should (= (/ -1.0 0.0) (/ 1.0 (msgpack-read-from-string (unibyte-string #xcb #x80 0 0 0 0 0 0 0)))))
+  (should (= (/ 1.0 0.0) (msgpack-read-from-string (unibyte-string #xcb #x7f #xf0 0 0 0 0 0 0))))
+  (should (= (/ -1.0 0.0) (msgpack-read-from-string (unibyte-string #xcb #xff #xf0 0 0 0 0 0 0))))
+  (should (isnan (msgpack-read-from-string (unibyte-string #xcb #x7f #xf8 0 0 0 0 0 0))))
   ;; string within [0, 31] bytes
   (should (equal "" (msgpack-read-from-string (unibyte-string #b10100000))))
   (should (equal "hello" (msgpack-read-from-string (unibyte-string #b10100101 ?h ?e ?l ?l ?o))))
@@ -162,7 +176,9 @@
 (ert-deftest msgpack-byte-to-signed ()
   (should (= (msgpack-byte-to-signed #x80) -128))
   (should (= (msgpack-byte-to-signed #xff) -1))
-  (should (= (msgpack-byte-to-signed #x7f) 127)))
+  (should (= (msgpack-byte-to-signed #x7f) 127))
+  (should (= (msgpack-bytes-to-signed (unibyte-string #xff #xff #xff #xff #xff #xff #xff #xff))
+             -1)))
 
 (ert-deftest msgpack-encode-integer ()
   ;; [0, 127]
@@ -382,6 +398,17 @@
                         (msgpack-unsigned-to-bytes seconds 8)))
       (`(,high ,low ,micro ,pico)
        (should (= seconds (+ (* high (expt 2 16)) low)))
+       (should (= nanoseconds (+ (* 1000 micro) pico))))))
+
+  (let ((seconds -1)
+        (nanoseconds 42000))
+    (pcase-exhaustive (msgpack-read-from-string
+                       (msgpack-concat
+                        #xc7 12 -1
+                        (msgpack-unsigned-to-bytes nanoseconds 4)
+                        (msgpack-signed-to-bytes seconds 8)))
+      (`(,high ,low ,micro ,pico)
+       (should (= seconds (+ (* high (expt 2 16)) low)))
        (should (= nanoseconds (+ (* 1000 micro) pico)))))))
 
 (ert-deftest msgpack-bits-plus-one ()
@@ -396,6 +423,91 @@
   (should (equal (msgpack-signed-to-bytes-fallback -1 8) (unibyte-string #xff #xff #xff #xff #xff #xff #xff #xff)))
   (should (equal (msgpack-signed-to-bytes-fallback -30 4) (unibyte-string #xff #xff #xff #xe2)))
   (should (equal (msgpack-signed-to-bytes-fallback -30 8) (unibyte-string #xff #xff #xff #xff #xff #xff #xff #xe2))))
+
+(defun msgpack-test--hex-to-bytes (hex)
+  "Convert dash-separated HEX bytes to a unibyte string."
+  (apply #'unibyte-string
+         (mapcar (lambda (part) (string-to-number part 16))
+                 (split-string hex "-" t))))
+
+(defun msgpack-test--json-value-to-expected (value)
+  "Convert JSON test suite VALUE to the expected decoded Lisp value."
+  (cond
+   ((eq value :json-false) :json-false)
+   ((eq value :json-null) :json-null)
+   ((vectorp value)
+    (vconcat (mapcar #'msgpack-test--json-value-to-expected value)))
+   ((listp value)
+    (mapcar (lambda (pair)
+              (cons (symbol-name (car pair))
+                    (msgpack-test--json-value-to-expected (cdr pair))))
+            value))
+   (t value)))
+
+(defun msgpack-test--suite-entry-expected (entry)
+  "Return expected decoded value for a conformance suite ENTRY."
+  (cond
+   ((assq 'nil entry) :json-null)
+   ((assq 'bool entry) (if (eq (cdr (assq 'bool entry)) :json-false)
+                           :json-false
+                         t))
+   ((assq 'binary entry)
+    (msgpack-bin-make
+     (msgpack-test--hex-to-bytes (cdr (assq 'binary entry)))))
+   ((assq 'bignum entry)
+    (string-to-number (cdr (assq 'bignum entry))))
+   ((assq 'number entry) (cdr (assq 'number entry)))
+   ((assq 'string entry) (cdr (assq 'string entry)))
+   ((assq 'array entry)
+    (vconcat (mapcar #'msgpack-test--json-value-to-expected
+                     (cdr (assq 'array entry)))))
+   ((assq 'map entry)
+    (msgpack-test--json-value-to-expected (cdr (assq 'map entry))))
+   ((assq 'timestamp entry)
+    (let* ((parts (cdr (assq 'timestamp entry)))
+           (seconds (aref parts 0))
+           (nanoseconds (aref parts 1)))
+      (msgpack-seconds-to-time seconds nanoseconds)))
+   ((assq 'ext entry)
+    (let ((ext (cdr (assq 'ext entry))))
+      (msgpack-ext-make (aref ext 0)
+                        (msgpack-test--hex-to-bytes (aref ext 1)))))
+   (t (error "Unsupported test suite entry: %S" entry))))
+
+(defun msgpack-test--equal-decoded-p (expected actual)
+  "Return non-nil if EXPECTED and ACTUAL decoded values are equivalent."
+  (cond
+   ((and (numberp expected) (numberp actual))
+    (= expected actual))
+   ((and (msgpack-bin-p expected) (msgpack-bin-p actual))
+    (equal (msgpack-bin-string expected) (msgpack-bin-string actual)))
+   ((and (msgpack-ext-p expected) (msgpack-ext-p actual))
+    (and (= (msgpack-ext-type expected) (msgpack-ext-type actual))
+         (equal (msgpack-ext-data expected) (msgpack-ext-data actual))))
+   (t (equal expected actual))))
+
+(ert-deftest msgpack-external-conformance-suite ()
+  (skip-unless (and msgpack-test-suite-file
+                    (file-exists-p msgpack-test-suite-file)))
+  (let* ((json-object-type 'alist)
+         (json-array-type 'vector)
+         (json-false :json-false)
+         (json-null :json-null)
+         (suite (json-read-file msgpack-test-suite-file)))
+    (dolist (group suite)
+      (cl-loop for entry across (cdr group)
+               for expected = (msgpack-test--suite-entry-expected entry)
+               do (cl-loop for hex across (cdr (assq 'msgpack entry))
+                           for bytes = (msgpack-test--hex-to-bytes hex)
+                           for actual = (msgpack-decode bytes
+                                                        :array-type 'vector
+                                                        :map-type 'alist
+                                                        :key-type 'string
+                                                        :bin-type 'msgpack-bin
+                                                        :null-value :json-null
+                                                        :false-value :json-false)
+                           do (should (msgpack-test--equal-decoded-p
+                                       expected actual)))))))
 
 (provide 'msgpack-tests)
 ;;; msgpack-tests.el ends here
