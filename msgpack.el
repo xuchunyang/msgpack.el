@@ -63,7 +63,8 @@ If nil, `msgpack-read' will guess the type based on the value of
       `alist'                     `symbol'
       `plist'                     `keyword'
 
-Consider let-binding this around your call to `msgpack-read' instead of `setq'ing it.")
+Consider let-binding this around your call to `msgpack-read'
+instead of `setq'ing it.")
 
 (defun msgpack-read-byte ()
   "Read one byte."
@@ -99,7 +100,7 @@ Consider let-binding this around your call to `msgpack-read' instead of `setq'in
   "Convert BYTES to signed int."
   (let ((nbits (* 8 (length bytes)))
         (num (msgpack-bytes-to-unsigned bytes)))
-    (pcase (lsh num (- (1- nbits)))     ; sign
+    (pcase (ash num (- (1- nbits)))     ; sign
       (0 num)
       (1 (- num (expt 2 nbits))))))
 
@@ -313,11 +314,12 @@ calling this function, e.g., (set-buffer-multibyte nil)."
    (nreverse
     (cl-loop repeat size
              for i from 0 by 8
-             collect (logand #xff (lsh integer (- i)))))))
+             collect (logand #xff (ash integer (- i)))))))
 
 (defvar msgpack-emacs-integer-length
   (cl-loop for i from 1
-           when (zerop (lsh most-negative-fixnum (- i)))
+           when (zerop (with-no-warnings
+                         (lsh most-negative-fixnum (- i))))
            return i)
   "The number of bits this Emacs's integer is in.
 Usually this is 62, for 32-bit Emacs, it might be 30.")
