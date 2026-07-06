@@ -268,6 +268,8 @@
   (should (equal (msgpack-encode #s(hash-table test equal size 2 data (compact t schema 0)))
                  (msgpack-concat #x82 #xa7 "compact" #xc3 #xa6 "schema" 0)))
   (should (equal (msgpack-encode []) (unibyte-string #x90)))
+  (should (equal (msgpack-encode (msgpack-array-make nil)) (unibyte-string #x90)))
+  (should (equal (msgpack-encode (msgpack-map-make nil)) (unibyte-string #x80)))
   (should (equal (msgpack-encode (msgpack-bin-make "bin"))
                  (msgpack-concat #xc4 3 "bin")))
   (should (equal (msgpack-encode (msgpack-ext-make 0 "x"))

@@ -40,6 +40,10 @@ Read the first MessagePack object contained in FILE and return it.
 
 Return MessagePack representation of OBJ.
 
+Use `(msgpack-bin-make STRING)` to encode a unibyte string as MessagePack `bin`,
+`(msgpack-array-make ELEMENTS)` to force array encoding, and
+`(msgpack-map-make PAIRS)` to force map encoding.
+
 ### `msgpack-false` (defaults to `:msgpack-false`)
 
 Value encoded as MessagePack `false`.  Decoding still defaults false to `nil`;

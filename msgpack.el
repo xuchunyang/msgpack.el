@@ -652,6 +652,18 @@ in the result."
 Use it if you need to write MessagePack byte array."
   string)
 
+(cl-defstruct (msgpack-array (:constructor nil)
+                             (:constructor msgpack-array-make (elements))
+                             (:copier nil))
+  "Wrapper forcing ELEMENTS to encode as a MessagePack array."
+  elements)
+
+(cl-defstruct (msgpack-map (:constructor nil)
+                           (:constructor msgpack-map-make (pairs))
+                           (:copier nil))
+  "Wrapper forcing PAIRS to encode as a MessagePack map."
+  pairs)
+
 (defun msgpack-string-pad-right (s len padding)
   "If S is shorter than LEN, pad it with PADDING on the right."
   (if (< (length s) len)
@@ -696,6 +708,9 @@ Use it if you need to write MessagePack byte array."
     ;; NOTE cl-struct is also vector for Emacs 25, so it's important to put any cl-struct before vector
     ;; ext
     ((cl-struct msgpack-ext) (msgpack-encode-ext obj))
+    ;; explicit array/map wrappers
+    ((cl-struct msgpack-array elements) (msgpack-encode-array elements))
+    ((cl-struct msgpack-map pairs) (msgpack-encode-alist pairs))
     ;; array
     ((pred vectorp) (msgpack-encode-array obj))
     ;; map
