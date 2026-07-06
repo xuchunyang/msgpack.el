@@ -556,9 +556,9 @@ in the result."
       ((<= n 15)
        (unibyte-string (logior #b10000000 n)))
       ((<= n #xffff)
-       (unibyte-string #xde (msgpack-unsigned-to-bytes n 2)))
+       (concat (unibyte-string #xde) (msgpack-unsigned-to-bytes n 2)))
       ((<= n (1- (expt 2 32)))
-       (unibyte-string #xdf (msgpack-unsigned-to-bytes n 4))))
+       (concat (unibyte-string #xdf) (msgpack-unsigned-to-bytes n 4))))
      (cl-loop for (k . v) in alist
               concat (concat
                       (msgpack-encode k)

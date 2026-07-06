@@ -234,7 +234,10 @@
 
 (ert-deftest msgpack-encode-alist ()
   (should (equal (msgpack-encode-alist ()) (unibyte-string #x80)))
-  (should (equal (msgpack-encode-alist '((1 . 2) (3 . 4))) (unibyte-string #b10000010 1 2 3 4))))
+  (should (equal (msgpack-encode-alist '((1 . 2) (3 . 4))) (unibyte-string #b10000010 1 2 3 4)))
+  (let ((alist (mapcar (lambda (i) (cons i i)) (number-sequence 1 16))))
+    (should (equal (substring (msgpack-encode-alist alist) 0 3)
+                   (unibyte-string #xde 0 16)))))
 
 (ert-deftest msgpack-encode-plist ()
   (should (equal (msgpack-encode-plist '(1 2 3 4)) (unibyte-string #b10000010 1 2 3 4)))
