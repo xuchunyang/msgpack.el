@@ -30,7 +30,6 @@
 (require 'json)                         ; `json-alist-p'
 (require 'cl-lib)
 (require 'seq)                          ; `seq-partition'
-(require 'map)                          ; `map-into'
 
 (defgroup msgpack nil
   "MessagePack encoder and decoder."
@@ -117,9 +116,10 @@ Must be either `string' for the historical raw unibyte string behavior or
 
 (defun msgpack-bytes-to-unsigned (bytes)
   "Convert BYTES to unsigned int."
-  (cl-loop for i from 0
-           for n across (nreverse bytes)
-           sum (* n (expt (expt 2 8) i))))
+  (let ((n 0))
+    (cl-loop for byte across bytes
+             do (setq n (+ (* n 256) byte)))
+    n))
 
 (defun msgpack--bytes-negative-p (bytes)
   "Return non-nil if BYTES encode a negative two's-complement integer."
@@ -214,11 +214,14 @@ DATA must be a unibyte string."
 
 (defun msgpack-read-array (len)
   "Read a MessagePack array with LEN elements."
-  (cl-loop repeat len
-           collect (msgpack--read) into l
-           finally return (pcase-exhaustive msgpack-array-type
-                            ('vector (vconcat l))
-                            ('list l))))
+  (pcase-exhaustive msgpack-array-type
+    ('list
+     (cl-loop repeat len collect (msgpack--read)))
+    ('vector
+     (let ((values (make-vector len nil)))
+       (cl-loop for index below len
+                do (aset values index (msgpack--read))
+                finally return values)))))
 
 (defun msgpack-read-map-key ()
   "Read a MessagePack map key."
@@ -287,58 +290,57 @@ default, you should make this buffer single-byte buffer before
 calling this function, e.g., (set-buffer-multibyte nil)."
   ;; (cl-assert (not enable-multibyte-characters))
   (let ((b (msgpack-read-byte)))
-    (pcase b
-      ;; nil
-      (#xc0 msgpack-null)
-      (#xc1 (error "Never used: #xc1"))
-      ;; bool
-      (#xc2 msgpack--read-false)
-      (#xc3 t)
-      ;; int
-      (#xcc (msgpack-read-byte))
-      (#xcd (msgpack-bytes-to-unsigned (msgpack-read-bytes 2)))
-      (#xce (msgpack-bytes-to-unsigned (msgpack-read-bytes 4)))
-      (#xcf (msgpack-bytes-to-unsigned (msgpack-read-bytes 8)))
-      (#xd0 (msgpack-bytes-to-signed (msgpack-read-bytes 1)))
-      (#xd1 (msgpack-bytes-to-signed (msgpack-read-bytes 2)))
-      (#xd2 (msgpack-bytes-to-signed (msgpack-read-bytes 4)))
-      (#xd3 (msgpack-bytes-to-signed (msgpack-read-bytes 8)))
-      ;; float
-      (#xca (msgpack-bytes-to-float (msgpack-read-bytes 4)))
-      (#xcb (msgpack-bytes-to-double (msgpack-read-bytes 8)))
-      ;; string
-      (#xd9 (decode-coding-string (msgpack-read-bytes (msgpack-read-byte)) 'utf-8))
-      (#xda (decode-coding-string (msgpack-read-bytes (msgpack-bytes-to-unsigned (msgpack-read-bytes 2))) 'utf-8))
-      (#xdb (decode-coding-string (msgpack-read-bytes (msgpack-bytes-to-unsigned (msgpack-read-bytes 4))) 'utf-8))
-      ;; bin
-      (#xc4 (msgpack-read-bin (msgpack-read-byte)))
-      (#xc5 (msgpack-read-bin (msgpack-bytes-to-unsigned (msgpack-read-bytes 2))))
-      (#xc6 (msgpack-read-bin (msgpack-bytes-to-unsigned (msgpack-read-bytes 4))))
-      ;; array
-      (#xdc (msgpack-read-array (msgpack-bytes-to-unsigned (msgpack-read-bytes 2))))
-      (#xdd (msgpack-read-array (msgpack-bytes-to-unsigned (msgpack-read-bytes 4))))
-      ;; map
-      (#xde (msgpack-read-map (msgpack-bytes-to-unsigned (msgpack-read-bytes 2))))
-      (#xdf (msgpack-read-map (msgpack-bytes-to-unsigned (msgpack-read-bytes 4))))
-      ;; ext
-      (#xd4 (msgpack-read-ext 1))
-      (#xd5 (msgpack-read-ext 2))
-      (#xd6 (msgpack-read-ext 4))
-      (#xd7 (msgpack-read-ext 8))
-      (#xd8 (msgpack-read-ext 16))
-      (#xc7 (msgpack-read-ext (msgpack-read-byte)))
-      (#xc8 (msgpack-read-ext (msgpack-bytes-to-unsigned (msgpack-read-bytes 2))))
-      (#xc9 (msgpack-read-ext (msgpack-bytes-to-unsigned (msgpack-read-bytes 4))))
-      (_ (pcase (msgpack-byte-to-bits b)
-           (`(0 . ,_) b)
-           ;; negative fixint
-           (`(1 1 1 . ,bits) (- (msgpack-bits-to-unsigned bits) (expt 2 5)))
-           ;; string
-           (`(1 0 1 . ,bits) (decode-coding-string (msgpack-read-bytes (msgpack-bits-to-unsigned bits)) 'utf-8))
-           ;; array
-           (`(1 0 0 1 . ,bits) (msgpack-read-array (msgpack-bits-to-unsigned bits)))
-           ;; map
-           (`(1 0 0 0 . ,bits) (msgpack-read-map (msgpack-bits-to-unsigned bits))))))))
+    (cond
+     ((<= b #x7f) b)
+     ((<= #x80 b #x8f) (msgpack-read-map (logand b #x0f)))
+     ((<= #x90 b #x9f) (msgpack-read-array (logand b #x0f)))
+     ((<= #xa0 b #xbf)
+      (decode-coding-string (msgpack-read-bytes (logand b #x1f)) 'utf-8))
+     ((<= #xe0 b #xff) (- b 256))
+     (t
+      (pcase b
+        ;; nil
+        (#xc0 msgpack-null)
+        (#xc1 (error "Never used: #xc1"))
+        ;; bool
+        (#xc2 msgpack--read-false)
+        (#xc3 t)
+        ;; int
+        (#xcc (msgpack-read-byte))
+        (#xcd (msgpack-bytes-to-unsigned (msgpack-read-bytes 2)))
+        (#xce (msgpack-bytes-to-unsigned (msgpack-read-bytes 4)))
+        (#xcf (msgpack-bytes-to-unsigned (msgpack-read-bytes 8)))
+        (#xd0 (msgpack-bytes-to-signed (msgpack-read-bytes 1)))
+        (#xd1 (msgpack-bytes-to-signed (msgpack-read-bytes 2)))
+        (#xd2 (msgpack-bytes-to-signed (msgpack-read-bytes 4)))
+        (#xd3 (msgpack-bytes-to-signed (msgpack-read-bytes 8)))
+        ;; float
+        (#xca (msgpack-bytes-to-float (msgpack-read-bytes 4)))
+        (#xcb (msgpack-bytes-to-double (msgpack-read-bytes 8)))
+        ;; string
+        (#xd9 (decode-coding-string (msgpack-read-bytes (msgpack-read-byte)) 'utf-8))
+        (#xda (decode-coding-string (msgpack-read-bytes (msgpack-bytes-to-unsigned (msgpack-read-bytes 2))) 'utf-8))
+        (#xdb (decode-coding-string (msgpack-read-bytes (msgpack-bytes-to-unsigned (msgpack-read-bytes 4))) 'utf-8))
+        ;; bin
+        (#xc4 (msgpack-read-bin (msgpack-read-byte)))
+        (#xc5 (msgpack-read-bin (msgpack-bytes-to-unsigned (msgpack-read-bytes 2))))
+        (#xc6 (msgpack-read-bin (msgpack-bytes-to-unsigned (msgpack-read-bytes 4))))
+        ;; array
+        (#xdc (msgpack-read-array (msgpack-bytes-to-unsigned (msgpack-read-bytes 2))))
+        (#xdd (msgpack-read-array (msgpack-bytes-to-unsigned (msgpack-read-bytes 4))))
+        ;; map
+        (#xde (msgpack-read-map (msgpack-bytes-to-unsigned (msgpack-read-bytes 2))))
+        (#xdf (msgpack-read-map (msgpack-bytes-to-unsigned (msgpack-read-bytes 4))))
+        ;; ext
+        (#xd4 (msgpack-read-ext 1))
+        (#xd5 (msgpack-read-ext 2))
+        (#xd6 (msgpack-read-ext 4))
+        (#xd7 (msgpack-read-ext 8))
+        (#xd8 (msgpack-read-ext 16))
+        (#xc7 (msgpack-read-ext (msgpack-read-byte)))
+        (#xc8 (msgpack-read-ext (msgpack-bytes-to-unsigned (msgpack-read-bytes 2))))
+        (#xc9 (msgpack-read-ext (msgpack-bytes-to-unsigned (msgpack-read-bytes 4))))
+        (_ (error "Invalid MessagePack prefix: 0x%02x" b)))))))
 
 ;;;###autoload
 (cl-defun msgpack-read (&key
@@ -394,12 +396,13 @@ ARGS are keyword arguments forwarded to `msgpack-read'."
 
 (defun msgpack-unsigned-to-bytes (integer size)
   "Convert unsigned INTEGER to SIZE bytes."
-  (apply
-   #'unibyte-string
-   (nreverse
-    (cl-loop repeat size
-             for i from 0 by 8
-             collect (logand #xff (ash integer (- i)))))))
+  (let ((bytes (make-string size 0))
+        (index (1- size)))
+    (while (>= index 0)
+      (aset bytes index (logand integer #xff))
+      (setq integer (ash integer -8)
+            index (1- index)))
+    bytes))
 
 (defvar msgpack-emacs-integer-length
   (cl-loop for i from 1
@@ -610,21 +613,27 @@ in the result."
   "Encode float F as MessagePack float."
   (concat (unibyte-string #xca) (msgpack-float-to-bytes f)))
 
+(defun msgpack--encode-count (count fixed-base fixed-max marker16 marker32)
+  "Encode COUNT using fixed, 16-bit, or 32-bit MessagePack length prefixes."
+  (cond
+   ((<= count fixed-max)
+    (unibyte-string (logior fixed-base count)))
+   ((<= count #xffff)
+    (concat (unibyte-string marker16) (msgpack-unsigned-to-bytes count 2)))
+   ((<= count (1- (expt 2 32)))
+    (concat (unibyte-string marker32) (msgpack-unsigned-to-bytes count 4)))))
+
 (defun msgpack-encode-array (array)
   "Return a MessagePack representation of ARRAY."
-  (let ((n (length array)))
-    (cond
-     ((<= n 15)
-      (concat (unibyte-string (logior #b10010000 n))
-              (mapconcat #'msgpack-encode array "")))
-     ((<= n #xffff)
-      (concat (unibyte-string #xdc)
-              (msgpack-unsigned-to-bytes n 2)
-              (mapconcat #'msgpack-encode array "")))
-     ((<= n (1- (expt 2 32)))
-      (concat (unibyte-string #xdd)
-              (msgpack-unsigned-to-bytes n 4)
-              (mapconcat #'msgpack-encode array ""))))))
+  (with-temp-buffer
+    (set-buffer-multibyte nil)
+    (insert (msgpack--encode-count (length array) #x90 15 #xdc #xdd))
+    (if (vectorp array)
+        (cl-loop for item across array
+                 do (insert (msgpack-encode item)))
+      (dolist (item array)
+        (insert (msgpack-encode item))))
+    (buffer-string)))
 
 (defun msgpack-encode-list (list)
   "Encode LIST as MessagePack array or map accordingly."
@@ -635,19 +644,13 @@ in the result."
 
 (defun msgpack-encode-alist (alist)
   "Encode ALIST as MessagePack map."
-  (let ((n (length alist)))
-    (concat
-     (cond
-      ((<= n 15)
-       (unibyte-string (logior #b10000000 n)))
-      ((<= n #xffff)
-       (concat (unibyte-string #xde) (msgpack-unsigned-to-bytes n 2)))
-      ((<= n (1- (expt 2 32)))
-       (concat (unibyte-string #xdf) (msgpack-unsigned-to-bytes n 4))))
-     (cl-loop for (k . v) in alist
-              concat (concat
-                      (msgpack-encode k)
-                      (msgpack-encode v))))))
+  (with-temp-buffer
+    (set-buffer-multibyte nil)
+    (insert (msgpack--encode-count (length alist) #x80 15 #xde #xdf))
+    (cl-loop for (k . v) in alist
+             do (insert (msgpack-encode k))
+                (insert (msgpack-encode v)))
+    (buffer-string)))
 
 ;; `json--plist-to-alist'
 (defun msgpack-plist-to-alist (plist)
@@ -662,6 +665,17 @@ in the result."
 (defun msgpack-encode-plist (plist)
   "Encode PLIST as MessagePack map."
   (msgpack-encode-alist (msgpack-plist-to-alist plist)))
+
+(defun msgpack-encode-hash-table (table)
+  "Encode hash TABLE as MessagePack map without first building an alist."
+  (with-temp-buffer
+    (set-buffer-multibyte nil)
+    (insert (msgpack--encode-count (hash-table-count table) #x80 15 #xde #xdf))
+    (maphash (lambda (key value)
+               (insert (msgpack-encode key))
+               (insert (msgpack-encode value)))
+             table)
+    (buffer-string)))
 
 (cl-defstruct (msgpack-bin (:constructor nil)
                            (:constructor msgpack-bin-make (string))
@@ -732,7 +746,7 @@ Use it if you need to write MessagePack byte array."
     ;; array
     ((pred vectorp) (msgpack-encode-array obj))
     ;; map
-    ((pred hash-table-p) (msgpack-encode-alist (map-into obj 'list)))
+    ((pred hash-table-p) (msgpack-encode-hash-table obj))
     ;; encode symbols and keywords as string
     ((pred keywordp) (msgpack-encode-string (substring (symbol-name obj) 1)))
     ((pred symbolp) (msgpack-encode-string (symbol-name obj)))
@@ -747,56 +761,57 @@ Unlike `msgpack-read', the return value is meaningless, it is
 faster than `msgpack-read' and should be used to detect if the
 MessagePack object is completed."
   (let ((b (msgpack-read-byte)))
-    (pcase b
-      (#xc0)
-      (#xc1)
-      (#xc2)
-      (#xc3)
-      (#xcc (msgpack-read-bytes 1))
-      (#xcd (msgpack-read-bytes 2))
-      (#xce (msgpack-read-bytes 4))
-      (#xcf (msgpack-read-bytes 8))
-      (#xd0 (msgpack-read-bytes 1))
-      (#xd1 (msgpack-read-bytes 2))
-      (#xd2 (msgpack-read-bytes 4))
-      (#xd3 (msgpack-read-bytes 8))
-      (#xca (msgpack-read-bytes 4))
-      (#xcb (msgpack-read-bytes 8))
-      (#xd9 (msgpack-read-bytes (msgpack-read-byte)))
-      (#xda (msgpack-read-bytes (msgpack-bytes-to-unsigned (msgpack-read-bytes 2))))
-      (#xdb (msgpack-read-bytes (msgpack-bytes-to-unsigned (msgpack-read-bytes 4))))
-      (#xc4 (msgpack-read-bytes (msgpack-read-byte)))
-      (#xc5 (msgpack-read-bytes (msgpack-bytes-to-unsigned (msgpack-read-bytes 2))))
-      (#xc6 (msgpack-read-bytes (msgpack-bytes-to-unsigned (msgpack-read-bytes 4))))
-      (#xdc (cl-loop repeat (msgpack-bytes-to-unsigned (msgpack-read-bytes 2))
-                     do (msgpack-try-read)))
-      (#xdd (cl-loop repeat (msgpack-bytes-to-unsigned (msgpack-read-bytes 4))
-                     do (msgpack-try-read)))
-      (#xde (cl-loop repeat (msgpack-bytes-to-unsigned (msgpack-read-bytes 2))
-                     do (msgpack-try-read) (msgpack-try-read)))
-      (#xdf (cl-loop repeat (msgpack-bytes-to-unsigned (msgpack-read-bytes 4))
-                     do (msgpack-try-read) (msgpack-try-read)))
-      (#xd4 (msgpack-read-bytes 2))
-      (#xd5 (msgpack-read-bytes 3))
-      (#xd6 (msgpack-read-bytes 5))
-      (#xd7 (msgpack-read-bytes 9))
-      (#xd8 (msgpack-read-bytes 17))
-      (#xc7 (msgpack-read-bytes (1+ (msgpack-read-byte))))
-      (#xc8 (msgpack-read-bytes
-             (1+ (msgpack-bytes-to-unsigned (msgpack-read-bytes 2)))))
-      (#xc9 (msgpack-read-bytes
-             (1+ (msgpack-bytes-to-unsigned (msgpack-read-bytes 4)))))
-      (_ (pcase (msgpack-byte-to-bits b)
-           (`(0 . ,_))
-           (`(1 1 1 . ,_))
-           (`(1 0 1 . ,bits)
-            (msgpack-read-bytes (msgpack-bits-to-unsigned bits)))
-           (`(1 0 0 1 . ,bits)
-            (cl-loop repeat (msgpack-bits-to-unsigned bits)
-                     do (msgpack-try-read)))
-           (`(1 0 0 0 . ,bits)
-            (cl-loop repeat (msgpack-bits-to-unsigned bits)
-                     do (msgpack-try-read) (msgpack-try-read))))))))
+    (cond
+     ((<= b #x7f))
+     ((<= #x80 b #x8f)
+      (cl-loop repeat (logand b #x0f)
+               do (msgpack-try-read) (msgpack-try-read)))
+     ((<= #x90 b #x9f)
+      (cl-loop repeat (logand b #x0f)
+               do (msgpack-try-read)))
+     ((<= #xa0 b #xbf)
+      (msgpack-read-bytes (logand b #x1f)))
+     ((<= #xe0 b #xff))
+     (t
+      (pcase b
+        (#xc0)
+        (#xc1)
+        (#xc2)
+        (#xc3)
+        (#xcc (msgpack-read-bytes 1))
+        (#xcd (msgpack-read-bytes 2))
+        (#xce (msgpack-read-bytes 4))
+        (#xcf (msgpack-read-bytes 8))
+        (#xd0 (msgpack-read-bytes 1))
+        (#xd1 (msgpack-read-bytes 2))
+        (#xd2 (msgpack-read-bytes 4))
+        (#xd3 (msgpack-read-bytes 8))
+        (#xca (msgpack-read-bytes 4))
+        (#xcb (msgpack-read-bytes 8))
+        (#xd9 (msgpack-read-bytes (msgpack-read-byte)))
+        (#xda (msgpack-read-bytes (msgpack-bytes-to-unsigned (msgpack-read-bytes 2))))
+        (#xdb (msgpack-read-bytes (msgpack-bytes-to-unsigned (msgpack-read-bytes 4))))
+        (#xc4 (msgpack-read-bytes (msgpack-read-byte)))
+        (#xc5 (msgpack-read-bytes (msgpack-bytes-to-unsigned (msgpack-read-bytes 2))))
+        (#xc6 (msgpack-read-bytes (msgpack-bytes-to-unsigned (msgpack-read-bytes 4))))
+        (#xdc (cl-loop repeat (msgpack-bytes-to-unsigned (msgpack-read-bytes 2))
+                       do (msgpack-try-read)))
+        (#xdd (cl-loop repeat (msgpack-bytes-to-unsigned (msgpack-read-bytes 4))
+                       do (msgpack-try-read)))
+        (#xde (cl-loop repeat (msgpack-bytes-to-unsigned (msgpack-read-bytes 2))
+                       do (msgpack-try-read) (msgpack-try-read)))
+        (#xdf (cl-loop repeat (msgpack-bytes-to-unsigned (msgpack-read-bytes 4))
+                       do (msgpack-try-read) (msgpack-try-read)))
+        (#xd4 (msgpack-read-bytes 2))
+        (#xd5 (msgpack-read-bytes 3))
+        (#xd6 (msgpack-read-bytes 5))
+        (#xd7 (msgpack-read-bytes 9))
+        (#xd8 (msgpack-read-bytes 17))
+        (#xc7 (msgpack-read-bytes (1+ (msgpack-read-byte))))
+        (#xc8 (msgpack-read-bytes
+               (1+ (msgpack-bytes-to-unsigned (msgpack-read-bytes 2)))))
+        (#xc9 (msgpack-read-bytes
+               (1+ (msgpack-bytes-to-unsigned (msgpack-read-bytes 4))))))))))
 
 (defun msgpack-try-read-from-string (string)
   "Signal `end-of-buffer' if STRING is not a MessagePack object."
