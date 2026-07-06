@@ -32,24 +32,36 @@
 (require 'seq)                          ; `seq-partition'
 (require 'map)                          ; `map-into'
 
-(defvar msgpack-false :msgpack-false
-  "Value to use when reading and writing MessagePack `false'.")
+(defgroup msgpack nil
+  "MessagePack encoder and decoder."
+  :group 'lisp
+  :prefix "msgpack-")
 
-(defvar msgpack-null nil
-  "Value to use when reading and writing MessagePack `null'.")
+(defcustom msgpack-false :msgpack-false
+  "Value to use when writing MessagePack `false'.
+For backwards compatibility, reading MessagePack `false' still defaults to nil;
+use the `:false-value' keyword argument to `msgpack-read' or `msgpack-decode'
+to choose a different decoded value."
+  :type 'sexp)
 
-(defvar msgpack-array-type 'list
+(defcustom msgpack-null nil
+  "Value to use when reading and writing MessagePack `null'."
+  :type 'sexp)
+
+(defcustom msgpack-array-type 'list
   "Type to convert MessagePack arrays to.
 Must be one of `vector' or `list'.  Consider let-binding this around
-your call to `msgpack-read' instead of `setq'ing it.")
+your call to `msgpack-read' instead of `setq'ing it."
+  :type '(choice (const vector) (const list)))
 
-(defvar msgpack-map-type 'alist
+(defcustom msgpack-map-type 'alist
   "Type to convert MessagePack maps to.
 Must be one of `alist', `plist', or `hash-table'.  Consider let-binding
 this around your call to `msgpack-read' instead of `setq'ing it.  Ordering
-is maintained for `alist' and `plist', but not for `hash-table'.")
+is maintained for `alist' and `plist', but not for `hash-table'."
+  :type '(choice (const alist) (const plist) (const hash-table)))
 
-(defvar msgpack-key-type nil
+(defcustom msgpack-key-type nil
   "Type to convert MessagePack keys to, only for key that is string.
 If the map's key is not string, this variable is ignored.
 
@@ -64,7 +76,20 @@ If nil, `msgpack-read' will guess the type based on the value of
       `plist'                     `keyword'
 
 Consider let-binding this around your call to `msgpack-read'
-instead of `setq'ing it.")
+instead of `setq'ing it."
+  :type '(choice (const :tag "Infer from map type" nil)
+                 (const string)
+                 (const symbol)
+                 (const keyword)))
+
+(defcustom msgpack-bin-type 'string
+  "Type to convert MessagePack bin values to.
+Must be either `string' for the historical raw unibyte string behavior or
+`msgpack-bin' for a lossless wrapper."
+  :type '(choice (const string) (const msgpack-bin)))
+
+(defvar msgpack--read-false nil
+  "Dynamically bound value used when reading MessagePack false.")
 
 (defun msgpack-read-byte ()
   "Read one byte."
@@ -162,17 +187,24 @@ DATA must be a unibyte string."
   (cl-assert (not (multibyte-string-p data)))
   (msgpack-ext--make type data))
 
+(defun msgpack-read-bin (amt)
+  "Read AMT bytes as a MessagePack bin value."
+  (let ((bytes (msgpack-read-bytes amt)))
+    (pcase-exhaustive msgpack-bin-type
+      ('string bytes)
+      ('msgpack-bin (msgpack-bin-make bytes)))))
+
 (defun msgpack-read-array (len)
   "Read a MessagePack array with LEN elements."
   (cl-loop repeat len
-           collect (msgpack-read) into l
+           collect (msgpack--read) into l
            finally return (pcase-exhaustive msgpack-array-type
                             ('vector (vconcat l))
                             ('list l))))
 
 (defun msgpack-read-map-key ()
   "Read a MessagePack map key."
-  (pcase (msgpack-read)
+  (pcase (msgpack--read)
     ((and (pred stringp) s)
      (pcase-exhaustive (or msgpack-key-type
                            (alist-get msgpack-map-type '((hash-table . string)
@@ -188,14 +220,14 @@ DATA must be a unibyte string."
   (pcase-exhaustive msgpack-map-type
     ('alist
      (cl-loop repeat size
-              collect (cons (msgpack-read-map-key) (msgpack-read))))
+              collect (cons (msgpack-read-map-key) (msgpack--read))))
     ('plist
      (cl-loop repeat size
-              nconc (list (msgpack-read-map-key) (msgpack-read))))
+              nconc (list (msgpack-read-map-key) (msgpack--read))))
     ('hash-table
      (let ((table (make-hash-table :test 'equal)))
        (cl-loop repeat size
-                do (puthash (msgpack-read-map-key) (msgpack-read) table))
+                do (puthash (msgpack-read-map-key) (msgpack--read) table))
        table))))
 
 (defun msgpack-seconds-to-time (seconds nanoseconds)
@@ -227,7 +259,7 @@ using the formula: HIGH * 2**16 + LOW + MICRO * 10**-6 + PICO * 10**-12."
                   (msgpack-seconds-to-time seconds nanoseconds)))
       (_ (msgpack-ext-make type data)))))
 
-(defun msgpack-read ()
+(defun msgpack--read ()
   "Parse and return the MessagePack object following point.
 Advances point just past MessagePack object.
 
@@ -239,10 +271,10 @@ calling this function, e.g., (set-buffer-multibyte nil)."
   (let ((b (msgpack-read-byte)))
     (pcase b
       ;; nil
-      (#xc0 nil)
+      (#xc0 msgpack-null)
       (#xc1 (error "Never used: #xc1"))
       ;; bool
-      (#xc2 nil)
+      (#xc2 msgpack--read-false)
       (#xc3 t)
       ;; int
       (#xcc (msgpack-read-byte))
@@ -261,9 +293,9 @@ calling this function, e.g., (set-buffer-multibyte nil)."
       (#xda (decode-coding-string (msgpack-read-bytes (msgpack-bytes-to-unsigned (msgpack-read-bytes 2))) 'utf-8))
       (#xdb (decode-coding-string (msgpack-read-bytes (msgpack-bytes-to-unsigned (msgpack-read-bytes 4))) 'utf-8))
       ;; bin
-      (#xc4 (msgpack-read-bytes (msgpack-read-byte)))
-      (#xc5 (msgpack-read-bytes (msgpack-bytes-to-unsigned (msgpack-read-bytes 2))))
-      (#xc6 (msgpack-read-bytes (msgpack-bytes-to-unsigned (msgpack-read-bytes 4))))
+      (#xc4 (msgpack-read-bin (msgpack-read-byte)))
+      (#xc5 (msgpack-read-bin (msgpack-bytes-to-unsigned (msgpack-read-bytes 2))))
+      (#xc6 (msgpack-read-bin (msgpack-bytes-to-unsigned (msgpack-read-bytes 4))))
       ;; array
       (#xdc (msgpack-read-array (msgpack-bytes-to-unsigned (msgpack-read-bytes 2))))
       (#xdd (msgpack-read-array (msgpack-bytes-to-unsigned (msgpack-read-bytes 4))))
@@ -290,22 +322,57 @@ calling this function, e.g., (set-buffer-multibyte nil)."
            ;; map
            (`(1 0 0 0 . ,bits) (msgpack-read-map (msgpack-bits-to-unsigned bits))))))))
 
-(defun msgpack-read-from-string (string)
-  "Read the MessagePack object in unibyte STRING and return it."
+;;;###autoload
+(cl-defun msgpack-read (&key
+                        (array-type msgpack-array-type)
+                        (map-type msgpack-map-type)
+                        (key-type msgpack-key-type)
+                        (bin-type msgpack-bin-type)
+                        (null-value msgpack-null)
+                        (false-value nil))
+  "Parse and return the MessagePack object following point.
+Advances point just past MessagePack object.
+
+ARRAY-TYPE, MAP-TYPE, KEY-TYPE, BIN-TYPE, NULL-VALUE, and FALSE-VALUE override
+the corresponding dynamic defaults for this read and all nested values.  For
+backwards compatibility, FALSE-VALUE defaults to nil."
+  (let ((msgpack-array-type array-type)
+        (msgpack-map-type map-type)
+        (msgpack-key-type key-type)
+        (msgpack-bin-type bin-type)
+        (msgpack-null null-value)
+        (msgpack--read-false false-value))
+    (msgpack--read)))
+
+;;;###autoload
+(defun msgpack-decode (string &rest args)
+  "Read the first MessagePack object in unibyte STRING and return it.
+ARGS are keyword arguments forwarded to `msgpack-read'."
   (cl-assert (not (multibyte-string-p string)))
   (with-temp-buffer
     (set-buffer-multibyte nil)
     (insert string)
     (goto-char (point-min))
-    (msgpack-read)))
+    (apply #'msgpack-read args)))
 
-(defun msgpack-read-file (file)
-  "Read the first MessagePack object contained in FILE and return it."
+(defun msgpack-read-from-string (string &rest args)
+  "Read the MessagePack object in unibyte STRING and return it.
+ARGS are keyword arguments forwarded to `msgpack-read'."
+  (apply #'msgpack-decode string args))
+
+(defun msgpack-read-file (file &rest args)
+  "Read the first MessagePack object contained in FILE and return it.
+ARGS are keyword arguments forwarded to `msgpack-read'."
   (with-temp-buffer
     (set-buffer-multibyte nil)
     (insert-file-contents-literally file)
     (goto-char (point-min))
-    (msgpack-read)))
+    (apply #'msgpack-read args)))
+
+(defun msgpack-decode-file (file &rest args)
+  "Read the first MessagePack object contained in FILE and return it.
+ARGS are keyword arguments forwarded to `msgpack-read'."
+  (apply #'msgpack-read-file file args))
 
 (defun msgpack-unsigned-to-bytes (integer size)
   "Convert unsigned INTEGER to SIZE bytes."
@@ -585,6 +652,18 @@ in the result."
 Use it if you need to write MessagePack byte array."
   string)
 
+(cl-defstruct (msgpack-array (:constructor nil)
+                             (:constructor msgpack-array-make (elements))
+                             (:copier nil))
+  "Wrapper forcing ELEMENTS to encode as a MessagePack array."
+  elements)
+
+(cl-defstruct (msgpack-map (:constructor nil)
+                           (:constructor msgpack-map-make (pairs))
+                           (:copier nil))
+  "Wrapper forcing PAIRS to encode as a MessagePack map."
+  pairs)
+
 (defun msgpack-string-pad-right (s len padding)
   "If S is shorter than LEN, pad it with PADDING on the right."
   (if (< (length s) len)
@@ -629,6 +708,9 @@ Use it if you need to write MessagePack byte array."
     ;; NOTE cl-struct is also vector for Emacs 25, so it's important to put any cl-struct before vector
     ;; ext
     ((cl-struct msgpack-ext) (msgpack-encode-ext obj))
+    ;; explicit array/map wrappers
+    ((cl-struct msgpack-array elements) (msgpack-encode-array elements))
+    ((cl-struct msgpack-map pairs) (msgpack-encode-alist pairs))
     ;; array
     ((pred vectorp) (msgpack-encode-array obj))
     ;; map
